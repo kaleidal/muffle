@@ -13,18 +13,20 @@
   let active: PeekTrack | null = null
   let didAnimate = false
 
-  $: if ($playerStore.showNextPreview && $playerStore.nextTrack) {
+  // Latch the preview once it becomes eligible.
+  // Keep it through the track-boundary gap until the transition finishes.
+  $: if (!latched && $playerStore.showNextPreview && $playerStore.nextTrack) {
     latched = { albumArt: $playerStore.nextTrack.albumArt, album: $playerStore.nextTrack.album }
   }
 
   $: active =
     latched ??
-    ($playerStore.showNextPreview && $playerStore.nextTrack
+    (($playerStore.peekLatched || $playerStore.showNextPreview) && $playerStore.nextTrack
       ? { albumArt: $playerStore.nextTrack.albumArt, album: $playerStore.nextTrack.album }
       : null)
 
   // Clear after transition completes.
-  $: if (!$playerStore.isTransitioning && !$playerStore.showNextPreview) {
+  $: if (!$playerStore.isTransitioning && !$playerStore.peekLatched) {
     didAnimate = false
     latched = null
   }
@@ -67,7 +69,7 @@
 {#if active}
   <div
     bind:this={peekEl}
-    class="peek bg-[#141414] rounded-[40px] p-5 w-fit h-fit flex items-center justify-center relative {($playerStore.showNextPreview || $playerStore.isTransitioning) ? 'visible' : ''} {$playerStore.isTransitioning ? 'clicking' : ''}"
+    class="peek bg-[#141414] rounded-[40px] p-5 w-fit h-fit flex items-center justify-center relative {($playerStore.peekLatched || $playerStore.showNextPreview || $playerStore.isTransitioning) ? 'visible' : ''} {$playerStore.isTransitioning ? 'clicking' : ''}"
   >
     <div class="relative">
       <img

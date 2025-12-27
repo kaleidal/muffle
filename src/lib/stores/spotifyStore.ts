@@ -380,21 +380,22 @@ function createSpotifyStore() {
 
     update((s) => ({ ...s, current }))
 
-    const currentTrack = current?.item ? mapToTrack(current.item) : null
+    const prevPlayer = get(playerStore)
+
+    // Spotify can briefly return `item: null` around track boundaries.
+    // If we treat that as "nothing playing", the UI flickers and the next-up transition becomes inconsistent.
+    const currentTrack = current?.item ? mapToTrack(current.item) : current?.is_playing ? prevPlayer.currentTrack : null
     const nextItem = queue?.queue?.[0] ?? null
     const nextTrack = nextItem ? mapToTrack(nextItem) : null
     const queueTracks = (queue?.queue ?? []).slice(0, 20).map(mapToTrack)
 
-    const progressPct =
-      current?.item && current.item.duration_ms
-        ? (current.progress_ms / current.item.duration_ms) * 100
-        : 0
+    const progressPct = current?.item && current.item.duration_ms ? (current.progress_ms / current.item.duration_ms) * 100 : prevPlayer.progress
 
     playerStore.setPlaybackState({
       current: currentTrack,
       next: nextTrack,
       queue: queueTracks,
-      isPlaying: !!current?.is_playing,
+      isPlaying: current?.is_playing ?? prevPlayer.isPlaying,
       progressPct
     })
   }

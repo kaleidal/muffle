@@ -4,6 +4,7 @@
 
   let seeking = false
   let seekValue = 0
+  let seekEl: HTMLInputElement | null = null
 
   let showDevices = false
   let devices: SpotifyDevice[] = []
@@ -91,10 +92,10 @@
     }
   }
 
-  $: seekValue && (() => {
-    const percent = (seekValue - 0) / (100 - 0) * 100
-    document.documentElement.style.setProperty('--seek-percent', `${percent}%`)
-  })()
+  $: if (seekEl) {
+    // Always set (including 0), otherwise the gradient can stick at the previous track's value.
+    seekEl.style.setProperty('--seek-percent', `${Math.max(0, Math.min(100, seekValue))}%`)
+  }
 </script>
 
 <div class="bg-[#141414] rounded-[40px] px-8 py-6 flex flex-col justify-center gap-4 h-full relative overflow-visible {$playerStore.isTransitioning ? 'reverb' : ''}">
@@ -210,11 +211,12 @@
 
         <div class="mt-3">
           <input
+            bind:this={seekEl}
             type="range"
             min="0"
             max="100"
             step="0.1"
-            class="w-full h-1.5 rounded-full bg-white/10 accent-(--accent-primary) cursor-pointer outline-0 border-none "
+            class="w-full cursor-pointer outline-0 border-none bg-transparent"
             bind:value={seekValue}
             onpointerdown={beginSeek}
             oninput={() => {
@@ -248,21 +250,25 @@ input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 6px;
-  border-radius: 9999px;
-  background: linear-gradient(
-    to right,
-    var(--accent-primary) 0%,
-    var(--accent-primary) var(--seek-percent, 0%),
-    rgba(255,255,255,0.06) var(--seek-percent, 0%),
-    rgba(255,255,255,0.06) 100%
-  );
+  height: 14px; /* provides vertical room for the thumb */
+  display: block;
+  background: transparent;
+  padding: 0;
+  margin: 0;
 }
 
 /* track so it’s transparent, we use background above */
 input[type='range']::-webkit-slider-runnable-track {
   -webkit-appearance: none;
-  background: transparent;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--accent-primary) 0%,
+    var(--accent-primary) var(--seek-percent, 0%),
+    rgba(255, 255, 255, 0.06) var(--seek-percent, 0%),
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  height: 6px;
 }
 
 /* thumb like you had */
@@ -274,6 +280,26 @@ input[type='range']::-webkit-slider-thumb {
   border-radius: 9999px;
   background: var(--accent-primary);
   margin-top: -4px;
+}
+
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--accent-primary);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--accent-primary);
 }
 
 </style>
