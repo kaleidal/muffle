@@ -19,7 +19,7 @@
 <div class="app-container h-screen flex flex-col bg-[#050505] overflow-hidden">
   <TitleBar />
 
-  <div class="flex-1 min-h-0 p-8 pt-6 overflow-visible">
+  <div class="flex-1 min-h-0 p-8 pt-4 overflow-visible">
     {#if $spotifyStore.status !== 'authenticated'}
       <LoginScreen />
     {:else}
