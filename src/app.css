@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 :root {
-  --bg-primary: #0a0a0a;
+  --bg-primary: #050505;
   --bg-secondary: #141414;
   --bg-tertiary: #1a1a1a;
   --bg-card: #1c1c1e;
@@ -129,15 +129,15 @@ button {
 @keyframes reverb {
   0% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(76, 58, 239, 0.4);
+    box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.4);
   }
   50% {
     transform: scale(1.02);
-    box-shadow: 0 0 0 10px rgba(76, 58, 239, 0);
+    box-shadow: 0 0 0 10px rgba(29, 185, 84, 0);
   }
   100% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(76, 58, 239, 0);
+    box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
   }
 }
 
@@ -163,8 +163,8 @@ button {
 
 /* Progress bar glow */
 .progress-glow {
-  box-shadow: 0 0 10px rgba(76, 58, 239, 0.5),
-              0 0 20px rgba(76, 58, 239, 0.3);
+  box-shadow: 0 0 10px rgba(29, 185, 84, 0.5),
+              0 0 20px rgba(29, 185, 84, 0.3);
 }
 
 /* Morphing blob background */
