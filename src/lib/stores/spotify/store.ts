@@ -2,18 +2,38 @@ import { get, writable } from 'svelte/store'
 import { playerStore } from '../playerStore'
 import { apiGet, isInsufficientScopeError } from './api'
 import { DEFAULT_SCOPES, getClientId } from './config'
-import { fetchBrowseCategoriesV2, fetchCategoryPlaylists, fetchFeatured, getLocale } from './browse'
 import { fetchPlaybackOnceFactory } from './store/playback'
 import { ensureFreshTokenFactory, loadPersistedSession, persistTokens, safeLogout } from './store/auth'
 import { createPolling } from './store/polling'
 import { createWebPlaybackController } from './webPlayback'
 import { createPlayerCommands } from './store/playerCommands'
-import { fetchAllPlaylists, fetchTopArtists, getLikedSongsView, getPlaylistView, searchTracks } from './store/library'
+import {
+  fetchAllPlaylists,
+  fetchRecommendations,
+  fetchRecentlyPlayedPlaylistContexts,
+  fetchTopArtists,
+  fetchTopTracks,
+  getLikedSongsView,
+  getPlaylistView,
+  searchTracks
+} from './store/library'
 import { initialSpotifyState, isUnauthorized, type SpotifyState } from './store/state'
 import type { SpotifyUser } from './types'
+import { bestImageUrl } from '../../utils/spotifyImages'
 
 function createSpotifyStore() {
   const { subscribe, set, update } = writable<SpotifyState>(initialSpotifyState)
+
+  let homeCache:
+    | null
+    | {
+        continuePlaylists: Array<{ id: string; name: string; images: { url: string }[] }>
+        topTracks: Array<{ id: string; name: string; image: string; uri: string }>
+        topArtists: Array<{ id: string; name: string; image: string; uri: string }>
+        mixes: Array<{ id: string; name: string; image: string; uris: string[] }>
+      } = null
+
+  let homeSectionsInFlight: Promise<void> | null = null
 
   let stopAuthListener: null | (() => void) = null
   let stopAuthErrorListener: null | (() => void) = null
@@ -74,15 +94,10 @@ function createSpotifyStore() {
     try {
       const me = await apiGet<SpotifyUser>(token, '/me')
 
-      const [playlistsRes, topArtistsRes, featuredRes] = await Promise.allSettled([
-        fetchAllPlaylists(token),
-        fetchTopArtists(token),
-        fetchFeatured(token, me.country)
-      ])
+      const [playlistsRes, topArtistsRes] = await Promise.allSettled([fetchAllPlaylists(token), fetchTopArtists(token)])
 
       const playlists = playlistsRes.status === 'fulfilled' ? playlistsRes.value || [] : []
       const topArtists = topArtistsRes.status === 'fulfilled' ? topArtistsRes.value || [] : []
-      const featuredPlaylists = featuredRes.status === 'fulfilled' ? featuredRes.value || [] : []
 
       update((s) => ({
         ...s,
@@ -90,9 +105,10 @@ function createSpotifyStore() {
         error: null,
         user: me,
         playlists,
-        featuredPlaylists,
         topArtists
       }))
+
+      homeCache = null
     } catch (e) {
       if (isUnauthorized(e)) {
         doSafeLogout('Spotify session expired. Please log in again.')
@@ -167,64 +183,178 @@ function createSpotifyStore() {
       await ensureFreshToken()
     },
 
-    async getHomeCategorySections(args?: { limit?: number; playlistsPerCategory?: number }) {
+    async getHomeSections() {
       const token = await ensureFreshToken()
       if (!token) throw new Error('Not authenticated')
 
-      const limit = args?.limit ?? 5
-      const playlistsPerCategory = args?.playlistsPerCategory ?? 12
+      const state = get({ subscribe })
+      const yourPlaylists = (state.playlists || []).slice(0, 12)
+      const fallbackTopArtists = (state.topArtists || [])
+        .slice(0, 10)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          image: bestImageUrl(a.images || []),
+          uri: `spotify:artist:${a.id}`
+        }))
+        .filter((a) => a.id && a.name)
 
-      const userCountry = get({ subscribe }).user?.country
-      const locale = getLocale({ userCountry })
-
-      let categories: Array<{ id: string; name?: string; icons?: Array<{ url: string }> }> = []
-      try {
-        categories = await fetchBrowseCategoriesV2(token, { limit, locale })
-      } catch (e) {
-        const msg = String((e as any)?.message || e || '')
-        if (!/\bSpotify API error 404\b/i.test(msg)) throw e
-      }
-
-      if (!categories.length) {
-        const playlists = await fetchFeatured(token, userCountry || undefined).catch(() => [])
-        return playlists.length
-          ? [
-              {
-                id: 'featured',
-                name: 'Featured',
-                iconUrl: '',
-                playlists
-              }
-            ]
-          : []
-      }
-
-      const sections = await Promise.all(
-        categories.map(async (c) => {
-          const playlists = await fetchCategoryPlaylists(token, c.id, playlistsPerCategory, userCountry || null).catch(() => [])
-          return {
-            id: c.id,
-            name: c.name || 'Category',
-            iconUrl: c.icons?.[0]?.url || '',
-            playlists
+      const buildFromCache = (cache: NonNullable<typeof homeCache>) =>
+        [
+          {
+            id: 'continue',
+            name: 'Continue listening',
+            cards: cache.continuePlaylists.map((p) => ({
+              id: p.id,
+              name: p.name,
+              image: bestImageUrl(p.images || []),
+              kind: 'playlist',
+              uri: `spotify:playlist:${p.id}`
+            }))
+          },
+          {
+            id: 'your_playlists',
+            name: 'Your playlists',
+            cards: yourPlaylists.map((p) => ({
+              id: p.id,
+              name: p.name,
+              image: bestImageUrl(p.images || []),
+              kind: 'playlist',
+              uri: `spotify:playlist:${p.id}`
+            }))
+          },
+          {
+            id: 'top_tracks',
+            name: 'Your top tracks',
+            cards: cache.topTracks.map((t) => ({
+              id: t.id,
+              name: t.name,
+              image: t.image,
+              kind: 'track',
+              uri: t.uri
+            }))
+          },
+          {
+            id: 'top_artists',
+            name: 'Your top artists',
+            cards: cache.topArtists.map((a) => ({
+              id: a.id,
+              name: a.name,
+              image: a.image,
+              kind: 'artist',
+              uri: a.uri
+            }))
+          },
+          {
+            id: 'mixes',
+            name: 'Muffle Mixes',
+            cards: cache.mixes.map((m) => ({
+              id: m.id,
+              name: m.name,
+              image: m.image,
+              kind: 'mix'
+            }))
           }
-        })
-      )
+        ].filter((s) => (s.cards || []).length)
 
-      const filled = sections.filter((s) => s.playlists.length)
-      if (filled.length) return filled
+      if (homeCache) return buildFromCache(homeCache)
 
-      const playlists = await fetchFeatured(token, userCountry || undefined).catch(() => [])
-      return playlists.length
-        ? [
-            {
-              id: 'featured',
-              name: 'Featured',
-              iconUrl: '',
-              playlists
+      if (!homeSectionsInFlight) {
+        homeSectionsInFlight = (async () => {
+          try {
+            const playlists = (state.playlists || []).slice(0, 24)
+
+            const [recentIdsRes, topTracksRes] = await Promise.allSettled([
+              fetchRecentlyPlayedPlaylistContexts(token, 50),
+              fetchTopTracks(token, 12)
+            ])
+
+            const recentIds = recentIdsRes.status === 'fulfilled' ? recentIdsRes.value || [] : []
+            const topTracks =
+              topTracksRes.status === 'fulfilled'
+                ? (topTracksRes.value || []).map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    image: t.albumArt,
+                    uri: t.uri
+                  }))
+                : []
+
+            const continuePlaylists = recentIds
+              .map((id) => playlists.find((p) => p.id === id))
+              .filter(Boolean)
+              .slice(0, 12) as any
+
+            const topArtists = fallbackTopArtists
+
+            const mixes: Array<{ id: string; name: string; image: string; uris: string[] }> = []
+            const seed = topArtists.slice(0, 6)
+            const recRes = await Promise.allSettled(seed.map((a) => fetchRecommendations(token, { seedArtistIds: [a.id], limit: 30 })))
+
+            for (let i = 0; i < seed.length; i++) {
+              const a = seed[i]
+              const r = recRes[i]
+              if (r.status !== 'fulfilled') continue
+              const uris = (r.value || []).map((t) => t.uri).filter(Boolean)
+              if (!uris.length) continue
+              mixes.push({ id: `mix:${a.id}`, name: `Because you like ${a.name}`, image: a.image, uris })
+              if (mixes.length >= 6) break
             }
-          ]
-        : []
+
+            homeCache = {
+              continuePlaylists: continuePlaylists.map((p: any) => ({ id: p.id, name: p.name, images: p.images })),
+              topTracks,
+              topArtists,
+              mixes
+            }
+          } catch {
+            homeCache = {
+              continuePlaylists: [],
+              topTracks: [],
+              topArtists: fallbackTopArtists,
+              mixes: []
+            }
+          } finally {
+            homeSectionsInFlight = null
+          }
+        })()
+      }
+
+      try {
+        await homeSectionsInFlight
+      } catch {
+        // ignore
+      }
+
+      if (homeCache) return buildFromCache(homeCache)
+
+      return [
+        {
+          id: 'your_playlists',
+          name: 'Your playlists',
+          cards: yourPlaylists.map((p) => ({
+            id: p.id,
+            name: p.name,
+            image: bestImageUrl(p.images || []),
+            kind: 'playlist',
+            uri: `spotify:playlist:${p.id}`
+          }))
+        },
+        {
+          id: 'top_artists',
+          name: 'Your top artists',
+          cards: fallbackTopArtists.map((a) => ({ id: a.id, name: a.name, image: a.image, kind: 'artist', uri: a.uri }))
+        }
+      ].filter((s) => (s.cards || []).length)
+    },
+
+    async playMix(mixId: string) {
+      const token = await ensureFreshToken()
+      if (!token) return
+      const mix = homeCache?.mixes?.find((m) => m.id === mixId)
+      if (!mix?.uris?.length) return
+
+      await (this as any).playUris(mix.uris)
     },
 
     async ensureWebPlaybackReady() {

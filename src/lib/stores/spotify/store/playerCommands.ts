@@ -205,6 +205,43 @@ export function createPlayerCommands(args: {
     void args.refreshPlayback()
   }
 
+  const playContextUri = async (contextUri: string) => {
+    const token = await args.ensureFreshToken()
+    if (!token) return
+
+    const preferred = args.webPlayback.getPreferredDeviceId()
+    const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
+
+    await runPlayerCommand(token, {
+      method: 'PUT',
+      path: `/me/player/play${qs}`,
+      body: { context_uri: contextUri, position_ms: 0 }
+    })
+
+    playerStore.setIsPlaying(true)
+    void args.refreshPlayback()
+  }
+
+  const playUris = async (uris: string[]) => {
+    const token = await args.ensureFreshToken()
+    if (!token) return
+
+    const clean = (uris || []).filter(Boolean)
+    if (!clean.length) return
+
+    const preferred = args.webPlayback.getPreferredDeviceId()
+    const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
+
+    await runPlayerCommand(token, {
+      method: 'PUT',
+      path: `/me/player/play${qs}`,
+      body: { uris: clean }
+    })
+
+    playerStore.setIsPlaying(true)
+    void args.refreshPlayback()
+  }
+
   const setShuffle = async (enabled: boolean) => {
     const token = await args.ensureFreshToken()
     if (!token) return
@@ -227,6 +264,8 @@ export function createPlayerCommands(args: {
     next,
     previous,
     playTrackUri,
+    playContextUri,
+    playUris,
     playPlaylistTrack,
     setShuffle
   }

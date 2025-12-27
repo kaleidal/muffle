@@ -48,14 +48,6 @@ export type SpotifyFeaturedPlaylists = {
   playlists: { items: SpotifyPlaylist[] }
 }
 
-export type SpotifyCategoryPlaylists = {
-  playlists: { items: SpotifyPlaylist[] }
-}
-
-export type SpotifyCategoriesResponse = {
-  categories: { items: { id: string; name?: string; icons?: SpotifyImage[] }[] }
-}
-
 export type SpotifyPaging<T> = {
   items: T[]
   next: string | null

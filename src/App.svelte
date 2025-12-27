@@ -20,7 +20,7 @@
   }
 </script>
 
-<div class="app-container h-screen flex flex-col bg-[#050505] overflow-hidden">
+<div class="app-container h-screen flex flex-col bg-(--bg-primary) overflow-hidden">
   <TitleBar />
 
   <div class="flex-1 min-h-0 p-8 pt-4 overflow-visible">
@@ -54,7 +54,7 @@
                 </div>
               </div>
             </div>
-            <div class="flex-1 min-h-0 overflow-hidden relative">
+            <div class="flex-1 min-h-0 overflow-visible relative">
               {#if $navigationStore.page === 'home'}
                 <MadeForYou />
               {:else if $navigationStore.page === 'playlist' && $navigationStore.playlistId}
@@ -69,9 +69,13 @@
         </div>
 
         <div class="flex flex-row w-full gap-4 h-37.5 shrink-0 items-stretch overflow-visible">
-          {#if $playerStore.peekLatched}
-            <div class="shrink-0 flex items-center">
-              <NextUpPeek />
+          {#if $playerStore.peekLatched || $playerStore.showNextPreview || $playerStore.isTransitioning || $playerStore.nowPlayingToast}
+            <div class="shrink-0 flex items-center relative">
+              {#if $playerStore.peekLatched || $playerStore.showNextPreview || $playerStore.isTransitioning}
+                <NextUpPeek variant="peek" />
+              {:else if $playerStore.nowPlayingToast}
+                <NextUpPeek variant="toast" />
+              {/if}
             </div>
           {/if}
  

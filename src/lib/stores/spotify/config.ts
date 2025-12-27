@@ -8,7 +8,8 @@ export const DEFAULT_SCOPES = [
   'user-read-currently-playing',
   'playlist-read-private',
   'playlist-read-collaborative',
-  'user-top-read'
+  'user-top-read',
+  'user-read-recently-played'
 ]
 
 export const STORAGE_KEYS = {

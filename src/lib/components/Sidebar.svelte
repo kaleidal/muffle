@@ -16,8 +16,8 @@
 </script>
 
 <aside class="w-24 shrink-0 h-full min-h-0">
-  <div class="h-full min-h-0 bg-[#141414] rounded-3xl p-3 flex flex-col items-center gap-3 overflow-hidden">
-    <div class="w-full flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide pb-6">
+  <div class="h-full min-h-0 bg-(--bg-secondary) rounded-3xl p-3 flex flex-col items-center gap-3 overflow-y-auto">
+    <div class="w-full flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide pt-2 pb-2">
       {#if $spotifyStore.status === 'authenticated'}
         <button
           class="relative aspect-square rounded-2xl overflow-hidden fluid-card group shrink-0 bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center"

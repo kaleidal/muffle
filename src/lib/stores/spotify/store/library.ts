@@ -10,6 +10,28 @@ import type {
 } from '../types'
 import { mapToPlayableTrack, type PlayableTrack } from '../mappers'
 
+type SpotifyRecommendationsResponse = {
+  tracks: Array<{
+    id: string
+    uri: string
+    name: string
+    duration_ms: number
+    artists: { name: string }[]
+    album: { name: string; images: { url: string }[] }
+  }>
+}
+
+type SpotifyTopTracksResponse = {
+  items: SpotifyRecommendationsResponse['tracks']
+}
+
+type SpotifyRecentlyPlayedResponse = {
+  items: Array<{
+    track: SpotifyRecommendationsResponse['tracks'][number] | null
+    context: { uri: string; type: string } | null
+  }>
+}
+
 export async function fetchAllPlaylists(token: string) {
   const items: SpotifyPlaylist[] = []
   let page = await apiGet<SpotifyPaging<SpotifyPlaylist>>(token, '/me/playlists?limit=50')
@@ -106,4 +128,54 @@ export async function getLikedSongsView(token: string) {
 export async function fetchTopArtists(token: string) {
   const res = await apiGet<{ items: SpotifyArtist[] }>(token, '/me/top/artists?limit=10&time_range=short_term')
   return res.items || []
+}
+
+export async function fetchTopTracks(token: string, limit = 12): Promise<PlayableTrack[]> {
+  const l = Math.max(1, Math.min(50, limit | 0))
+  const res = await apiGet<SpotifyTopTracksResponse>(
+    token,
+    `/me/top/tracks?limit=${l}&time_range=short_term&market=from_token`
+  )
+  return (res.items || []).map(mapToPlayableTrack)
+}
+
+export async function fetchRecentlyPlayedPlaylistContexts(token: string, limit = 50): Promise<string[]> {
+  const l = Math.max(1, Math.min(50, limit | 0))
+  const res = await apiGet<SpotifyRecentlyPlayedResponse>(token, `/me/player/recently-played?limit=${l}`)
+
+  const seen = new Set<string>()
+  const playlistIds: string[] = []
+
+  for (const it of res.items || []) {
+    const uri = it?.context?.uri
+    if (!uri) continue
+    const m = /^spotify:playlist:([A-Za-z0-9]+)$/.exec(uri)
+    if (!m) continue
+    const id = m[1]
+    if (seen.has(id)) continue
+    seen.add(id)
+    playlistIds.push(id)
+  }
+
+  return playlistIds
+}
+
+export async function fetchRecommendations(
+  token: string,
+  args: { seedArtistIds?: string[]; seedTrackIds?: string[]; limit?: number }
+): Promise<PlayableTrack[]> {
+  const seedsArtists = (args.seedArtistIds || []).filter(Boolean)
+  const seedsTracks = (args.seedTrackIds || []).filter(Boolean)
+  const limit = Math.max(1, Math.min(50, args.limit ?? 30))
+
+  const qs = new URLSearchParams({
+    limit: String(limit),
+    market: 'from_token'
+  })
+
+  if (seedsArtists.length) qs.set('seed_artists', seedsArtists.slice(0, 5).join(','))
+  if (seedsTracks.length) qs.set('seed_tracks', seedsTracks.slice(0, 5).join(','))
+
+  const res = await apiGet<SpotifyRecommendationsResponse>(token, `/recommendations?${qs.toString()}`)
+  return (res.tracks || []).map(mapToPlayableTrack)
 }
