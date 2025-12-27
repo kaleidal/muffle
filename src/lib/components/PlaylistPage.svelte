@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fly, fade } from 'svelte/transition'
+  import { onDestroy, onMount } from 'svelte'
   import { spotifyStore } from '../stores/spotify'
   import { bestImageUrl } from '../utils/spotifyImages'
 
@@ -27,6 +28,30 @@
   let loading = true
   let error: string | null = null
   let data: PlaylistView | null = null
+
+  let menu:
+    | null
+    | {
+        x: number
+        y: number
+        track: PlaylistTrack
+      } = null
+
+  const closeMenu = () => {
+    menu = null
+  }
+
+  onMount(() => {
+    const onGlobal = () => closeMenu()
+    window.addEventListener('click', onGlobal)
+    window.addEventListener('blur', onGlobal)
+    return () => {
+      window.removeEventListener('click', onGlobal)
+      window.removeEventListener('blur', onGlobal)
+    }
+  })
+
+  onDestroy(() => closeMenu())
 
   const formatTime = (ms: number) => {
     const total = Math.max(0, Math.floor(ms / 1000))
@@ -92,6 +117,12 @@
     } catch (e) {
       console.error('Shuffle play failed:', e)
     }
+  }
+
+  function openTrackMenu(e: MouseEvent, t: PlaylistTrack) {
+    e.preventDefault()
+    e.stopPropagation()
+    menu = { x: e.clientX, y: e.clientY, track: t }
   }
 </script>
 
@@ -159,6 +190,7 @@
           <button
             class="px-4 py-3 rounded-3xl hover:bg-white/5 transition-colors flex items-center gap-4 text-left group"
             onclick={() => playAt(i)}
+            oncontextmenu={(e) => openTrackMenu(e, t)}
             aria-label={`Play ${t.name}`}
           >
             <div class="w-10 text-white/40 text-sm font-semibold tabular-nums">{i + 1}</div>
@@ -183,6 +215,50 @@
         {/if}
       </div>
     </div>
+
+    {#if menu}
+      <div
+        class="fixed inset-0 z-60"
+        role="button"
+        tabindex="0"
+        aria-label="Close menu"
+        onclick={() => (menu = null)}
+        onkeydown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') menu = null
+        }}
+      >
+        <div
+          class="absolute w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30"
+          style={`left:${menu.x}px; top:${menu.y}px;`}
+          role="dialog"
+          tabindex="-1"
+          onclick={(e) => e.stopPropagation()}
+          onkeydown={(e) => {
+            if (e.key === 'Escape') menu = null
+          }}
+        >
+          <p class="text-white/60 text-xs font-semibold px-2 pb-2">QUEUE</p>
+          <div
+            class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn cursor-pointer"
+            role="menuitem"
+            tabindex="0"
+            onclick={() => {
+              const track = menu?.track
+              if (track) spotifyStore.enqueueTrack(track as any)
+              menu = null
+            }}
+            onkeydown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              const track = menu?.track
+              if (track) spotifyStore.enqueueTrack(track as any)
+              menu = null
+            }}
+          >
+            Add to queue
+          </div>
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>
 

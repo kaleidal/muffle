@@ -7,6 +7,7 @@ export type Track = {
   album: string
   albumArt: string
   duration: number
+  uri: string
 }
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -22,6 +23,7 @@ export type PlayerState = {
   currentTrack: Track | null
   nextTrack: Track | null
   queue: Track[]
+  queueSource: 'spotify' | 'app'
   isPlaying: boolean
   progress: number
   volume: number
@@ -44,6 +46,7 @@ function createPlayerStore() {
     currentTrack: null,
     nextTrack: null,
     queue: [],
+    queueSource: 'app',
     isPlaying: false,
     progress: 0,
     volume: 80,
@@ -144,15 +147,17 @@ function createPlayerStore() {
         const nextId = args.current?.id ?? null
         changedTrack = !!nextId && nextId !== prevId
 
-        if (state.showNextPreview && args.next?.id && !lastPeekTrackId) {
-          lastPeekTrackId = args.next.id
+        const effectiveNext = state.queueSource === 'spotify' ? args.next : state.nextTrack
+
+        if (state.showNextPreview && effectiveNext?.id && !lastPeekTrackId) {
+          lastPeekTrackId = effectiveNext.id
         }
 
         const suppressForPeek = !!(changedTrack && lastPeekTrackId && nextId && lastPeekTrackId === nextId)
         toastTrack = changedTrack && !suppressForPeek ? args.current : null
 
         const remainingMs = args.current ? args.current.duration * (1 - args.progressPct / 100) : Infinity
-        const showNextPreview = remainingMs <= 15000 && !!args.next
+        const showNextPreview = remainingMs <= 15000 && !!effectiveNext
 
         // Non-sticky latch: if progress moves back out of the 15s window (seek), it turns off.
         // Hold at the very end if we were already latched, to cover the boundary gap.
@@ -161,8 +166,8 @@ function createPlayerStore() {
         return {
           ...state,
           currentTrack: args.current,
-          nextTrack: args.next,
-          queue: args.queue,
+          nextTrack: state.queueSource === 'spotify' ? args.next : state.nextTrack,
+          queue: state.queueSource === 'spotify' ? args.queue : state.queue,
           isPlaying: args.isPlaying,
           progress: clamp(args.progressPct, 0, 100),
           showNextPreview,
@@ -181,6 +186,18 @@ function createPlayerStore() {
 
     setIsPlaying(isPlaying: boolean) {
       update((state) => ({ ...state, isPlaying }))
+    },
+
+    setQueueSource(source: 'spotify' | 'app') {
+      update((state) => ({ ...state, queueSource: source }))
+    },
+
+    setQueue(queue: Track[]) {
+      update((state) => ({ ...state, queue }))
+    },
+
+    setNextTrack(track: Track | null) {
+      update((state) => ({ ...state, nextTrack: track }))
     },
 
     play() {

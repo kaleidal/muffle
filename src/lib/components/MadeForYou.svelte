@@ -3,6 +3,24 @@
   import { fly, fade } from 'svelte/transition'
   import PlaylistCard from './PlaylistCard.svelte'
   import { spotifyStore } from '../stores/spotify'
+    let menu:
+      | null
+      | {
+          x: number
+          y: number
+          uri: string
+        } = null
+
+    const closeMenu = () => {
+      menu = null
+    }
+
+    function openUriMenu(e: MouseEvent, uri: string | null | undefined) {
+      if (!uri) return
+      e.preventDefault()
+      e.stopPropagation()
+      menu = { x: e.clientX, y: e.clientY, uri }
+    }
   import { cssVarHexToRgbTriplet, getDominantRgbTriplet } from '../utils/imageColor'
 
   type HomeCard = {
@@ -315,6 +333,7 @@
           if (heroCard.kind === 'track' && heroCard.uri) return await spotifyStore.playTrackUri(heroCard.uri)
           if (heroCard.kind === 'artist' && heroCard.uri) return await spotifyStore.playContextUri(heroCard.uri)
         }}
+        oncontextmenu={(e) => (heroCard.kind === 'track' ? openUriMenu(e, heroCard.uri) : undefined)}
         onmouseenter={() => {
           void setHeroFromImage(heroCard.image)
           onHeroEnter()
@@ -353,6 +372,7 @@
               if (heroCard.kind === 'track' && heroCard.uri) return await spotifyStore.playTrackUri(heroCard.uri)
               if (heroCard.kind === 'artist' && heroCard.uri) return await spotifyStore.playContextUri(heroCard.uri)
             }}
+            oncontextmenu={(e) => (heroCard.kind === 'track' ? openUriMenu(e, heroCard.uri) : undefined)}
             onmouseenter={() => {
               void setHeroFromImage(heroCard.image)
               onHeroEnter()
@@ -420,19 +440,25 @@
                 use:registerRow={section.id}
               >
                 {#each section.cards as c (c.id)}
-                  <PlaylistCard
-                    mix={{ id: c.id, name: c.name, image: c.image, type: c.kind }}
-                    size="lg"
-                    accentRgb={cardAccent[c.image] || null}
-                    onmouseenter={() => void setHeroFromImage(c.image)}
-                    onmouseleave={() => clearHero()}
-                    onSelect={async () => {
-                      if (c.kind === 'playlist' && c.uri) return await spotifyStore.playContextUri(c.uri)
-                      if (c.kind === 'track' && c.uri) return await spotifyStore.playTrackUri(c.uri)
-                      if (c.kind === 'artist' && c.uri) return await spotifyStore.playContextUri(c.uri)
-                      if (c.kind === 'mix') return await spotifyStore.playMix(c.id)
-                    }}
-                  />
+                  <div
+                    role="button"
+                    tabindex="0"
+                    oncontextmenu={(e) => (c.kind === 'track' ? openUriMenu(e, c.uri) : undefined)}
+                  >
+                    <PlaylistCard
+                      mix={{ id: c.id, name: c.name, image: c.image, type: c.kind }}
+                      size="lg"
+                      accentRgb={cardAccent[c.image] || null}
+                      onmouseenter={() => void setHeroFromImage(c.image)}
+                      onmouseleave={() => clearHero()}
+                      onSelect={async () => {
+                        if (c.kind === 'playlist' && c.uri) return await spotifyStore.playContextUri(c.uri)
+                        if (c.kind === 'track' && c.uri) return await spotifyStore.playTrackUri(c.uri)
+                        if (c.kind === 'artist' && c.uri) return await spotifyStore.playContextUri(c.uri)
+                        if (c.kind === 'mix') return await spotifyStore.playMix(c.id)
+                      }}
+                    />
+                  </div>
                 {/each}
               </div>
             </div>
@@ -447,6 +473,50 @@
   {/if}
   </div>
 </div>
+
+{#if menu}
+  <div
+    class="fixed inset-0 z-60"
+    role="button"
+    tabindex="0"
+    aria-label="Close menu"
+    onclick={() => (menu = null)}
+    onkeydown={(e) => {
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') menu = null
+    }}
+  >
+    <div
+      class="absolute w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30"
+      style={`left:${menu.x}px; top:${menu.y}px;`}
+      role="dialog"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') menu = null
+      }}
+    >
+      <p class="text-white/60 text-xs font-semibold px-2 pb-2">QUEUE</p>
+      <div
+        class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn cursor-pointer"
+        role="menuitem"
+        tabindex="0"
+        onclick={() => {
+          const uri = menu?.uri
+          if (uri) spotifyStore.enqueueUri(uri)
+          menu = null
+        }}
+        onkeydown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          const uri = menu?.uri
+          if (uri) spotifyStore.enqueueUri(uri)
+          menu = null
+        }}
+      >
+        Add to queue
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   @property --hero-r {

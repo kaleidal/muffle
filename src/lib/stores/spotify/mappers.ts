@@ -8,7 +8,8 @@ export function mapToTrack(item: NonNullable<SpotifyCurrentlyPlaying['item']>): 
     artist: item.artists.map((a) => a.name).join(', '),
     album: item.album.name,
     albumArt: item.album.images?.[0]?.url || '',
-    duration: item.duration_ms
+    duration: item.duration_ms,
+    uri: (item as any).uri || ''
   }
 }
 

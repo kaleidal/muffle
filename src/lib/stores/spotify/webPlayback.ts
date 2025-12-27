@@ -112,7 +112,8 @@ export function createWebPlaybackController(args: {
           artist: (currentItem.artists || []).map((a: any) => a.name).join(', '),
           album: currentItem.album?.name ?? '',
           albumArt: currentItem.album?.images?.[0]?.url ?? '',
-          duration: currentItem.duration_ms ?? 0
+          duration: currentItem.duration_ms ?? 0,
+          uri: currentItem.uri ?? ''
         }
 
         const nextItem = state.track_window?.next_tracks?.[0] ?? null
@@ -123,7 +124,8 @@ export function createWebPlaybackController(args: {
               artist: (nextItem.artists || []).map((a: any) => a.name).join(', '),
               album: nextItem.album?.name ?? '',
               albumArt: nextItem.album?.images?.[0]?.url ?? '',
-              duration: nextItem.duration_ms ?? 0
+              duration: nextItem.duration_ms ?? 0,
+              uri: nextItem.uri ?? ''
             }
           : null
 
@@ -133,7 +135,8 @@ export function createWebPlaybackController(args: {
           artist: (t.artists || []).map((a: any) => a.name).join(', '),
           album: t.album?.name ?? '',
           albumArt: t.album?.images?.[0]?.url ?? '',
-          duration: t.duration_ms ?? 0
+          duration: t.duration_ms ?? 0,
+          uri: t.uri ?? ''
         }))
 
         const progressPct = currentTrack.duration ? (state.position / currentTrack.duration) * 100 : 0

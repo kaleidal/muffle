@@ -47,7 +47,7 @@
   })
 </script>
 
-<div class="h-10 flex items-center justify-between px-4 pt-4 bg-[#050505] drag-region">
+<div class="h-10 flex items-center justify-between px-4 pt-4 bg-[#050505] drag-region relative z-[100]">
   <div class="flex items-center gap-2 no-drag">
     {#if $spotifyStore.status === 'authenticated' && $spotifyStore.user}
       <div class="relative z-10">
@@ -72,11 +72,12 @@
 
         {#if open}
           <div
-            class="absolute left-0 mt-2 w-44 rounded-2xl bg-[#141414] border border-white/10 shadow-lg overflow-hidden"
+            class="absolute left-0 mt-2 w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-50"
             bind:this={menuEl}
           >
+            <p class="text-white/60 text-xs font-semibold px-2 pb-2">ACCOUNT</p>
             <button
-              class="w-full text-left px-4 py-3 text-white/80 text-sm font-semibold hover:bg-white/10 transition-colors"
+              class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold transition-colors"
               onclick={close}
               aria-label="Settings"
             >
@@ -84,17 +85,17 @@
             </button>
 
             <button
-              class="w-full text-left px-4 py-3 text-white/80 text-sm font-semibold hover:bg-white/10 transition-colors"
+              class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold transition-colors mt-2"
               onclick={openAccount}
               aria-label="Spotify Account"
             >
               Account
             </button>
 
-            <div class="h-px bg-white/10"></div>
+            <div class="h-px bg-white/10 my-2"></div>
 
             <button
-              class="w-full text-left px-4 py-3 text-white/80 text-sm font-semibold hover:bg-white/10 transition-colors"
+              class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold transition-colors"
               onclick={logout}
               aria-label="Logout"
             >

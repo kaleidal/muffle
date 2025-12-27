@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store'
 import { playerStore } from '../playerStore'
-import { apiGet, isInsufficientScopeError } from './api'
+import type { Track } from '../playerStore'
+import { apiCall, apiGet, isInsufficientScopeError } from './api'
 import { DEFAULT_SCOPES, getClientId } from './config'
 import { fetchPlaybackOnceFactory } from './store/playback'
 import { ensureFreshTokenFactory, loadPersistedSession, persistTokens, safeLogout } from './store/auth'
@@ -23,6 +24,18 @@ import { bestImageUrl } from '../../utils/spotifyImages'
 
 function createSpotifyStore() {
   const { subscribe, set, update } = writable<SpotifyState>(initialSpotifyState)
+
+  playerStore.setQueueSource('spotify')
+
+  let lastObserved:
+    | {
+        trackId: string | null
+        isPlaying: boolean
+        progressPct: number
+      }
+    | null = null
+
+  let lastKnownTrack: Track | null = null
 
   let homeCache:
     | null
@@ -55,6 +68,8 @@ function createSpotifyStore() {
         isPlaying: state.isPlaying,
         progressPct: state.progressPct
       })
+
+      if (state.current) lastKnownTrack = state.current
     }
   })
   const stopPlaybackPolling = () => polling.stop()
@@ -75,9 +90,22 @@ function createSpotifyStore() {
         const token = await ensureFreshToken()
         if (!token) return
         await fetchPlaybackOnce(token)
+
+        const p = get(playerStore)
+        if (p.currentTrack) lastKnownTrack = p.currentTrack
       } catch {
         // ignore
       }
+    }
+  })
+
+  const commands = createPlayerCommands({
+    ensureFreshToken,
+    webPlayback,
+    refreshPlayback: async () => {
+      const token = await ensureFreshToken()
+      if (!token) return
+      await fetchPlaybackOnce(token)
     }
   })
 
@@ -371,15 +399,44 @@ function createSpotifyStore() {
       await fetchPlaybackOnce(token)
     },
 
-    ...createPlayerCommands({
-      ensureFreshToken,
-      webPlayback,
-      refreshPlayback: async () => {
-        const token = await ensureFreshToken()
-        if (!token) return
-        await fetchPlaybackOnce(token)
-      }
-    }),
+    ...commands,
+
+    async enqueueTrack(track: Track) {
+      if (!track?.uri) return
+      const token = await ensureFreshToken()
+      if (!token) return
+
+      const deviceId = webPlayback.getDeviceId()
+      const qs = new URLSearchParams({ uri: track.uri })
+      if (deviceId) qs.set('device_id', deviceId)
+      await apiCall(token, { method: 'POST', path: `/me/player/queue?${qs.toString()}` })
+    },
+
+    async enqueueUri(uri: string) {
+      const token = await ensureFreshToken()
+      if (!token) return
+      const deviceId = webPlayback.getDeviceId()
+      const qs = new URLSearchParams({ uri })
+      if (deviceId) qs.set('device_id', deviceId)
+      await apiCall(token, { method: 'POST', path: `/me/player/queue?${qs.toString()}` })
+    },
+
+    async playTrackUri(uri: string) {
+      await commands.playTrackUri(uri)
+    },
+
+
+    reorderQueue(_fromIndex: number, _toIndex: number) {
+      // Spotify queue cannot be reordered via API.
+    },
+
+    async next() {
+      await commands.next()
+    },
+
+    async previous() {
+      await commands.previous()
+    },
 
     async searchTracks(query: string) {
       const token = await ensureFreshToken()
