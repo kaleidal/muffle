@@ -255,10 +255,25 @@ export function createPlayerCommands(args: {
     void args.refreshPlayback()
   }
 
+  const setVolumePercent = async (pct: number) => {
+    const token = await args.ensureFreshToken()
+    if (!token) return
+
+    const volume = Math.max(0, Math.min(100, Math.round(pct)))
+    playerStore.setVolume(volume)
+
+    const activeDeviceId = await getActiveDeviceId(token)
+    const device = activeDeviceId ? `&device_id=${encodeURIComponent(activeDeviceId)}` : ''
+    await apiCall(token, { method: 'PUT', path: `/me/player/volume?volume_percent=${volume}${device}` })
+
+    void args.refreshPlayback()
+  }
+
   return {
     getDevices,
     transferToDevice,
     seekToPercent,
+    setVolumePercent,
     play,
     pause,
     next,

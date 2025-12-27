@@ -66,7 +66,9 @@
           </div>
         </div>
 
-        <div class="flex flex-row w-full gap-4 h-37.5 shrink-0 items-stretch overflow-visible">
+        <div
+          class={`flex flex-row w-full gap-4 shrink-0 items-stretch overflow-visible transition-[height] duration-300 ease-out ${$playerStore.expanded ? 'h-90' : 'h-37.5'}`}
+        >
           {#if $playerStore.peekLatched || $playerStore.showNextPreview || $playerStore.isTransitioning || $playerStore.nowPlayingToast}
             <div class="shrink-0 flex items-center relative">
               {#if $playerStore.peekLatched || $playerStore.showNextPreview || $playerStore.isTransitioning}

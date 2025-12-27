@@ -27,6 +27,7 @@ export type PlayerState = {
   volume: number
   shuffle: boolean
   repeat: RepeatMode
+  expanded: boolean
   showNextPreview: boolean
   peekLatched: boolean
   isTransitioning: boolean
@@ -48,6 +49,7 @@ function createPlayerStore() {
     volume: 80,
     shuffle: false,
     repeat: 'off',
+    expanded: false,
     showNextPreview: false,
     peekLatched: false,
     isTransitioning: false,
@@ -125,6 +127,14 @@ function createPlayerStore() {
 
   const api = {
     subscribe,
+
+    toggleExpanded() {
+      update((state) => ({ ...state, expanded: !state.expanded }))
+    },
+
+    setExpanded(expanded: boolean) {
+      update((state) => ({ ...state, expanded: !!expanded }))
+    },
 
     setPlaybackState(args: { current: Track | null; next: Track | null; queue: Track[]; isPlaying: boolean; progressPct: number }) {
       let changedTrack = false
