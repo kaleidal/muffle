@@ -1,0 +1,203 @@
+@import 'tailwindcss';
+
+:root {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-tertiary: #1a1a1a;
+  --bg-card: #1c1c1e;
+  --bg-card-hover: #252528;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1a6;
+  --text-tertiary: #6e6e73;
+  --accent-primary: #1DB954;
+  --accent-secondary: #1ED760;
+  --accent-purple: #6B5BF5;
+  --accent-pink: #E1306C;
+  --accent-gradient: linear-gradient(135deg, #4C3AEF 0%, #6B5BF5 100%);
+  
+  /* Fluid animation timings */
+  --spring-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --spring-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --spring-elastic: cubic-bezier(0.68, -0.6, 0.32, 1.6);
+  --liquid-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font: inherit;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+#app {
+  height: 100%;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Drag region for frameless window */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Fluid card animations */
+.fluid-card {
+  transition: transform 0.4s var(--spring-bounce), 
+              box-shadow 0.3s var(--liquid-ease),
+              background 0.3s var(--liquid-ease);
+}
+
+.fluid-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.fluid-card:active {
+  transform: translateY(-2px) scale(0.98);
+}
+
+/* Bouncy button animations */
+.bouncy-btn {
+  transition: transform 0.3s var(--spring-elastic),
+              background 0.2s ease;
+}
+
+.bouncy-btn:hover {
+  transform: scale(1.05);
+}
+
+.bouncy-btn:active {
+  transform: scale(0.95);
+}
+
+/* Liquid pulse animation for playing indicator */
+@keyframes liquid-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.8;
+  }
+}
+
+.liquid-pulse {
+  animation: liquid-pulse 2s var(--liquid-ease) infinite;
+}
+
+/* Reverb/ripple animation for song transitions */
+@keyframes reverb {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 58, 239, 0.4);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 10px rgba(76, 58, 239, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 58, 239, 0);
+  }
+}
+
+.reverb {
+  animation: reverb 0.6s var(--spring-bounce);
+}
+
+/* Slide-in animation for next track preview */
+@keyframes slide-in-left {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.slide-in-left {
+  animation: slide-in-left 0.5s var(--spring-bounce) forwards;
+}
+
+/* Progress bar glow */
+.progress-glow {
+  box-shadow: 0 0 10px rgba(76, 58, 239, 0.5),
+              0 0 20px rgba(76, 58, 239, 0.3);
+}
+
+/* Morphing blob background */
+@keyframes morph {
+  0%, 100% {
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+  25% {
+    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+  }
+  50% {
+    border-radius: 50% 60% 30% 70% / 40% 40% 60% 50%;
+  }
+  75% {
+    border-radius: 40% 40% 50% 60% / 70% 30% 50% 50%;
+  }
+}
+
+.morphing-blob {
+  animation: morph 8s ease-in-out infinite;
+}
+
+/* Audio visualizer bars */
+@keyframes eq-bar {
+  0%, 100% { height: 20%; }
+  50% { height: 100%; }
+}
+
+.eq-bar {
+  animation: eq-bar 0.5s ease-in-out infinite;
+}
+
+.eq-bar:nth-child(1) { animation-delay: 0s; }
+.eq-bar:nth-child(2) { animation-delay: 0.1s; }
+.eq-bar:nth-child(3) { animation-delay: 0.2s; }
+.eq-bar:nth-child(4) { animation-delay: 0.15s; }
