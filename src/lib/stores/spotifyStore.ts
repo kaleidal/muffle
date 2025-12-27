@@ -64,6 +64,42 @@ type SpotifyQueue = {
   queue: NonNullable<SpotifyCurrentlyPlaying['item']>[]
 }
 
+type SpotifyPlaylistMeta = {
+  id: string
+  name: string
+  uri: string
+  images: SpotifyImage[]
+  owner?: { display_name?: string }
+  tracks?: { total?: number }
+}
+
+type SpotifyPlaylistTracksPage = {
+  items: Array<{
+    track: {
+      id: string
+      uri: string
+      name: string
+      duration_ms: number
+      artists: { name: string }[]
+      album: { name: string; images: SpotifyImage[] }
+    } | null
+  }>
+  next: string | null
+}
+
+type SpotifySearchTracksResponse = {
+  tracks: {
+    items: Array<{
+      id: string
+      uri: string
+      name: string
+      duration_ms: number
+      artists: { name: string }[]
+      album: { name: string; images: SpotifyImage[] }
+    }>
+  }
+}
+
 export type SpotifyDevice = {
   id: string | null
   name: string
@@ -152,6 +188,18 @@ function mapToTrack(item: NonNullable<SpotifyCurrentlyPlaying['item']>): Track {
     album: item.album.name,
     albumArt: item.album.images?.[0]?.url || '',
     duration: item.duration_ms
+  }
+}
+
+function mapToPlayableTrack(item: { id: string; name: string; duration_ms: number; uri: string; artists: { name: string }[]; album: { name: string; images: SpotifyImage[] } }) {
+  return {
+    id: item.id,
+    name: item.name,
+    artist: (item.artists || []).map((a) => a.name).join(', '),
+    album: item.album?.name ?? '',
+    albumArt: item.album?.images?.[0]?.url ?? '',
+    duration: item.duration_ms ?? 0,
+    uri: item.uri
   }
 }
 
@@ -800,6 +848,98 @@ function createSpotifyStore() {
       const qs = webPlaybackPreferred && webPlaybackDeviceId ? `?device_id=${encodeURIComponent(webPlaybackDeviceId)}` : ''
       await runPlayerCommand(token, { method: 'POST', path: `/me/player/previous${qs}` })
       void this.refreshPlayback()
+    },
+
+    async playTrackUri(uri: string) {
+      const token = await ensureFreshToken()
+      if (!token) return
+      const qs = webPlaybackPreferred && webPlaybackDeviceId ? `?device_id=${encodeURIComponent(webPlaybackDeviceId)}` : ''
+      await runPlayerCommand(token, { method: 'PUT', path: `/me/player/play${qs}`, body: { uris: [uri] } })
+      playerStore.setIsPlaying(true)
+      void this.refreshPlayback()
+    },
+
+    async playPlaylistTrack(playlistUri: string, position: number) {
+      const token = await ensureFreshToken()
+      if (!token) return
+      const qs = webPlaybackPreferred && webPlaybackDeviceId ? `?device_id=${encodeURIComponent(webPlaybackDeviceId)}` : ''
+      await runPlayerCommand(token, {
+        method: 'PUT',
+        path: `/me/player/play${qs}`,
+        body: {
+          context_uri: playlistUri,
+          offset: { position: Math.max(0, position | 0) },
+          position_ms: 0
+        }
+      })
+      playerStore.setIsPlaying(true)
+      void this.refreshPlayback()
+    },
+
+    async setShuffle(enabled: boolean) {
+      const token = await ensureFreshToken()
+      if (!token) return
+
+      const activeDeviceId = await getActiveDeviceId(token)
+      const device = activeDeviceId ? `&device_id=${encodeURIComponent(activeDeviceId)}` : ''
+      await apiCall(token, { method: 'PUT', path: `/me/player/shuffle?state=${enabled ? 'true' : 'false'}${device}` })
+
+      // Optimistic UI.
+      playerStore.setShuffle(enabled)
+      void this.refreshPlayback()
+    },
+
+    async searchTracks(query: string) {
+      const token = await ensureFreshToken()
+      if (!token) return []
+
+      const q = query.trim()
+      if (!q) return []
+
+      const res = await apiGet<SpotifySearchTracksResponse>(
+        token,
+        `/search?type=track&limit=30&market=from_token&q=${encodeURIComponent(q)}`
+      )
+
+      const items = res?.tracks?.items || []
+      return items.map(mapToPlayableTrack)
+    },
+
+    async getPlaylistView(playlistId: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+
+      const meta = await apiGet<SpotifyPlaylistMeta>(token, `/playlists/${encodeURIComponent(playlistId)}?market=from_token`)
+
+      const tracks: ReturnType<typeof mapToPlayableTrack>[] = []
+      let page = await apiGet<SpotifyPlaylistTracksPage>(
+        token,
+        `/playlists/${encodeURIComponent(playlistId)}/tracks?limit=100&market=from_token`
+      )
+
+      const push = (p: SpotifyPlaylistTracksPage) => {
+        for (const it of p.items || []) {
+          if (!it?.track) continue
+          tracks.push(mapToPlayableTrack(it.track))
+        }
+      }
+
+      push(page)
+      let guard = 0
+      while (page.next && guard < 20) {
+        guard++
+        page = await apiGetUrl<SpotifyPlaylistTracksPage>(token, page.next)
+        push(page)
+      }
+
+      return {
+        id: meta.id,
+        name: meta.name,
+        uri: meta.uri,
+        images: meta.images || [],
+        ownerName: meta.owner?.display_name || 'Spotify',
+        tracks
+      }
     },
 
     logout() {

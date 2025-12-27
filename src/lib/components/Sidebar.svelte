@@ -1,6 +1,7 @@
 <script lang="ts">
   import { spotifyStore } from '../stores/spotifyStore'
   import { bestImageUrl } from '../utils/spotifyImages'
+  import { navigationStore } from '../stores/navigationStore'
 
   $: playlistItems =
     $spotifyStore.status === 'authenticated' && $spotifyStore.playlists.length
@@ -15,24 +16,18 @@
 </script>
 
 <aside class="w-24 shrink-0 h-full min-h-0">
-  <div class="h-full min-h-0 bg-[#141414] rounded-[40px] p-3 flex flex-col items-center gap-3">
-    <div class="w-full flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide">
+  <div class="h-full min-h-0 bg-[#141414] rounded-[40px] p-3 flex flex-col items-center gap-3 overflow-hidden">
+    <div class="w-full flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide pb-6">
       {#if playlistItems.length}
         {#each playlistItems as playlist}
           <button
             class="relative aspect-square rounded-2xl overflow-hidden fluid-card group shrink-0"
             aria-label={playlist.name}
-            onclick={() => {}}
+            onclick={() => navigationStore.openPlaylist(playlist.id)}
           >
-            <img src={playlist.image} alt={playlist.name} class="w-full h-full object-cover" />
+            <img src={playlist.image} alt={playlist.name} class="w-full h-full object-contain bg-white/5" />
 
-            <div class="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <div class="w-8 h-8 rounded-full bg-white/20 backdrop-blur flex items-center justify-center bouncy-btn">
-                <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-            </div>
+            <div class="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </button>
         {/each}
       {:else}

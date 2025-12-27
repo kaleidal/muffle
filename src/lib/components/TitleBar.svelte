@@ -1,10 +1,13 @@
 <script lang="ts">
   import { spotifyStore } from '../stores/spotifyStore'
+  import { navigationStore } from '../stores/navigationStore'
 </script>
 
 <div class="h-10 flex items-center justify-between px-4 bg-[#0a0a0a] drag-region">
   <div class="flex items-center gap-3 no-drag">
-    <span class="text-white font-semibold text-sm">Muffle</span>
+    <button class="text-white font-semibold text-sm" onclick={() => navigationStore.goHome()} aria-label="Home">
+      Muffle
+    </button>
   </div>
   
   <div class="flex items-center gap-2 no-drag">

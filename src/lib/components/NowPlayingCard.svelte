@@ -209,7 +209,7 @@
           </div>
         </div>
 
-        <div class="mt-3">
+        <div class="mt-3 flex items-center">
           <input
             bind:this={seekEl}
             type="range"
@@ -250,7 +250,7 @@ input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 14px; /* provides vertical room for the thumb */
+  height: 6px;
   display: block;
   background: transparent;
   padding: 0;

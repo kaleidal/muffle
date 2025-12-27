@@ -178,6 +178,10 @@ function createPlayerStore() {
       update((state) => ({ ...state, shuffle: !state.shuffle }))
     },
 
+    setShuffle(shuffle: boolean) {
+      update((state) => ({ ...state, shuffle }))
+    },
+
     toggleRepeat() {
       update((state) => {
         const modes: RepeatMode[] = ['off', 'all', 'one']
