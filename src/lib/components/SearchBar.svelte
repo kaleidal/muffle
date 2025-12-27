@@ -13,10 +13,8 @@
 </script>
 
 <div class="bg-[#141414] rounded-[40px] h-14 px-6 flex items-center gap-3">
-  <svg class="w-7 h-7 text-white/50 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-    <path
-      d="M10 4a6 6 0 104.472 10.01l3.759 3.76 1.414-1.415-3.76-3.759A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"
-    />
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-white/50">
+    <path d="M21 21L16.66 16.66M19 11C19 15.4183 15.4183 19 11 19C6.58172 19 3 15.4183 3 11C3 6.58172 6.58172 3 11 3C15.4183 3 19 6.58172 19 11Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 
   <input
