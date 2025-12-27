@@ -1,57 +1,31 @@
-import { app, BrowserWindow, ipcMain, shell, session } from 'electron'
-import crypto from 'crypto'
-import http from 'http'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import { createRequire } from 'module'
+const { app, BrowserWindow, ipcMain, shell, session } = require('electron')
+const crypto = require('crypto')
+const http = require('http')
+const path = require('path')
 
-const require = createRequire(import.meta.url)
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+let mainWindow = null
 
-// castLabs ECS + Windows can error with: "Sandbox cannot access executable" (0x5)
-// in some environments (Defender/Controlled Folder Access, permissions, etc.).
-// Disabling sandbox is acceptable for local dev.
+let spotifyAuthServer = null
+let spotifyRedirectUri = null
+let spotifyPkceVerifier = null
+let spotifyAuthState = null
+
 if (process.env.NODE_ENV !== 'production') {
-  // Dev-only: Vite/HMR requires a looser CSP (unsafe-eval) and Electron will warn.
-  // This does not affect packaged builds.
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
   process.env.ELECTRON_DISABLE_SANDBOX = '1'
   app.commandLine.appendSwitch('no-sandbox')
   app.commandLine.appendSwitch('disable-gpu-sandbox')
 }
 
-// Optional: only needed for Squirrel.Windows install/uninstall events.
 if (process.platform === 'win32') {
   try {
-    // electron-squirrel-startup is optional in dev.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const squirrelStartup = require('electron-squirrel-startup')
     if (squirrelStartup) app.quit()
   } catch {
-    // Not installed in dev; ignore.
   }
 }
 
-let mainWindow: BrowserWindow | null = null
-
-type SpotifyAuthSuccess = {
-  accessToken: string
-  refreshToken: string | null
-  expiresIn: number
-}
-
-type SpotifyLoginArgs = {
-  clientId: string
-  scopes: string[]
-}
-
-let spotifyAuthServer: http.Server | null = null
-let spotifyRedirectUri: string | null = null
-let spotifyPkceVerifier: string | null = null
-let spotifyAuthState: string | null = null
-
-function base64UrlEncode(buffer: Buffer) {
+function base64UrlEncode(buffer) {
   return buffer
     .toString('base64')
     .replace(/\+/g, '-')
@@ -60,21 +34,15 @@ function base64UrlEncode(buffer: Buffer) {
 }
 
 function createPkceVerifier() {
-  // 32 bytes => 43 chars base64url-ish, valid for PKCE
   return base64UrlEncode(crypto.randomBytes(32))
 }
 
-function createPkceChallenge(verifier: string) {
+function createPkceChallenge(verifier) {
   const digest = crypto.createHash('sha256').update(verifier).digest()
   return base64UrlEncode(digest)
 }
 
-async function exchangeSpotifyCode(args: {
-  clientId: string
-  code: string
-  codeVerifier: string
-  redirectUri: string
-}): Promise<SpotifyAuthSuccess> {
+async function exchangeSpotifyCode(args) {
   const body = new URLSearchParams({
     client_id: args.clientId,
     grant_type: 'authorization_code',
@@ -91,7 +59,7 @@ async function exchangeSpotifyCode(args: {
     body
   })
 
-  const json = (await res.json()) as any
+  const json = await res.json()
   if (!res.ok) {
     throw new Error(json?.error_description || json?.error || 'Spotify token exchange failed')
   }
@@ -103,10 +71,7 @@ async function exchangeSpotifyCode(args: {
   }
 }
 
-async function refreshSpotifyToken(args: {
-  clientId: string
-  refreshToken: string
-}): Promise<{ accessToken: string; expiresIn: number }> {
+async function refreshSpotifyToken(args) {
   const body = new URLSearchParams({
     client_id: args.clientId,
     grant_type: 'refresh_token',
@@ -121,7 +86,7 @@ async function refreshSpotifyToken(args: {
     body
   })
 
-  const json = (await res.json()) as any
+  const json = await res.json()
   if (!res.ok) {
     throw new Error(json?.error_description || json?.error || 'Spotify token refresh failed')
   }
@@ -133,7 +98,7 @@ async function refreshSpotifyToken(args: {
 }
 
 async function stopSpotifyAuthServer() {
-  await new Promise<void>((resolve) => {
+  await new Promise((resolve) => {
     if (!spotifyAuthServer) return resolve()
     spotifyAuthServer.close(() => resolve())
   })
@@ -143,7 +108,7 @@ async function stopSpotifyAuthServer() {
   spotifyAuthState = null
 }
 
-async function startSpotifyAuthServer(clientId: string) {
+async function startSpotifyAuthServer(clientId) {
   await stopSpotifyAuthServer()
 
   spotifyPkceVerifier = createPkceVerifier()
@@ -166,7 +131,9 @@ async function startSpotifyAuthServer(clientId: string) {
       if (error) {
         res.writeHead(200, { 'content-type': 'text/html' })
         res.end(`<html><body><h2>Spotify login failed</h2><p>${error}</p><p>You can close this window.</p></body></html>`)
-        mainWindow?.webContents.send('spotify:auth-error', { message: error })
+        if (mainWindow) {
+          mainWindow.webContents.send('spotify:auth-error', { message: error })
+        }
         await stopSpotifyAuthServer()
         return
       }
@@ -195,20 +162,23 @@ async function startSpotifyAuthServer(clientId: string) {
         `<html><body style="font-family:system-ui;padding:24px"><h2>Connected to Spotify</h2><p>You can close this window and return to Muffle.</p></body></html>`
       )
 
-      mainWindow?.webContents.send('spotify:auth', tokens)
+      if (mainWindow) {
+        mainWindow.webContents.send('spotify:auth', tokens)
+      }
       await stopSpotifyAuthServer()
-    } catch (e: any) {
+    } catch (e) {
       res.writeHead(500, { 'content-type': 'text/plain' })
       res.end('Auth error')
-      mainWindow?.webContents.send('spotify:auth-error', { message: e?.message || 'Auth error' })
+      if (mainWindow) {
+        mainWindow.webContents.send('spotify:auth-error', { message: e?.message || 'Auth error' })
+      }
       await stopSpotifyAuthServer()
     }
   })
 
-  // Spotify requires exact redirect URIs (no wildcards), so use a stable port.
-  await new Promise<void>((resolve, reject) => {
-    spotifyAuthServer!.once('error', (err) => reject(err))
-    spotifyAuthServer!.listen(5174, '127.0.0.1', () => resolve())
+  await new Promise((resolve, reject) => {
+    spotifyAuthServer.once('error', (err) => reject(err))
+    spotifyAuthServer.listen(5174, '127.0.0.1', () => resolve())
   })
 
   spotifyRedirectUri = `http://127.0.0.1:5174/callback`
@@ -252,47 +222,58 @@ function createWindow() {
     icon: path.join(__dirname, '../public/icon.png')
   })
 
-  if (process.env.NODE_ENV !== 'production') {
-    void mainWindow.loadURL('http://localhost:5173')
+  const isDev = !app.isPackaged
+
+  mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+    console.error('Renderer did-fail-load', { errorCode, errorDescription, validatedURL })
+  })
+
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('Renderer process gone', details)
+  })
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173')
   } else {
-    void mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    shell.openExternal(url)
     return { action: 'deny' }
   })
 }
 
 app.whenReady().then(() => {
-  // Set a CSP to reduce exposure and remove Electron's insecure CSP warning.
-  // In dev we allow 'unsafe-eval' for Vite/HMR.
-  const isDev = process.env.NODE_ENV !== 'production'
+  const isDev = !app.isPackaged
+  const devOrigin = 'http://localhost:5173'
   const csp = [
-    "default-src 'self'",
-    // Vite dev uses eval in some cases; keep it dev-only.
+    isDev ? `default-src 'self' ${devOrigin}` : "default-src 'self'",
     isDev
-      ? "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co"
+      ? `script-src 'self' 'unsafe-eval' 'unsafe-inline' ${devOrigin} https://sdk.scdn.co`
       : "script-src 'self' 'unsafe-inline' https://sdk.scdn.co",
-    // Spotify Web API + auth + local callback + Vite dev server.
     isDev
       ? "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com http://127.0.0.1:5174 ws://localhost:5173 http://localhost:5173"
       : "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com http://127.0.0.1:5174",
-    "img-src 'self' data: https:",
-    // Allow Google Fonts stylesheet.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    // Allow Google Fonts font files.
+    isDev ? `img-src 'self' data: https: ${devOrigin}` : "img-src 'self' data: https:",
+    isDev
+      ? `style-src 'self' 'unsafe-inline' ${devOrigin} https://fonts.googleapis.com`
+      : "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    isDev
+      ? `style-src-elem 'self' 'unsafe-inline' ${devOrigin} https://fonts.googleapis.com`
+      : "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "media-src 'self' blob: https: https://*.spotifycdn.com",
     "frame-src https://accounts.spotify.com https://sdk.scdn.co"
   ].join('; ')
 
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const headers = details.responseHeaders ?? {}
-    headers['Content-Security-Policy'] = [csp]
-    callback({ responseHeaders: headers })
-  })
+  if (!isDev) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const headers = details.responseHeaders || {}
+      headers['Content-Security-Policy'] = [csp]
+      callback({ responseHeaders: headers })
+    })
+  }
 
   createWindow()
 
@@ -306,7 +287,7 @@ app.on('window-all-closed', () => {
 })
 
 ipcMain.handle('window:minimize', () => {
-  mainWindow?.minimize()
+  if (mainWindow) mainWindow.minimize()
 })
 
 ipcMain.handle('window:maximize', () => {
@@ -316,14 +297,14 @@ ipcMain.handle('window:maximize', () => {
 })
 
 ipcMain.handle('window:close', () => {
-  mainWindow?.close()
+  if (mainWindow) mainWindow.close()
 })
 
-ipcMain.handle('spotify:open-auth', async (_event, authUrl: string) => {
+ipcMain.handle('spotify:open-auth', async (_event, authUrl) => {
   await shell.openExternal(authUrl)
 })
 
-ipcMain.handle('spotify:login', async (_event, args: SpotifyLoginArgs) => {
+ipcMain.handle('spotify:login', async (_event, args) => {
   const { redirectUri, params } = await startSpotifyAuthServer(args.clientId)
   params.set('scope', args.scopes.join(' '))
   const authUrl = `https://accounts.spotify.com/authorize?${params.toString()}`
@@ -331,13 +312,14 @@ ipcMain.handle('spotify:login', async (_event, args: SpotifyLoginArgs) => {
   return { redirectUri }
 })
 
-ipcMain.handle('spotify:refresh', async (_event, args: { clientId: string; refreshToken: string }) => {
+ipcMain.handle('spotify:refresh', async (_event, args) => {
   try {
     return await refreshSpotifyToken(args)
-  } catch (e: any) {
+  } catch (e) {
     const message = e?.message || 'Spotify token refresh failed'
-    // Let renderer decide whether to force logout; this prevents silent failures.
-    mainWindow?.webContents.send('spotify:auth-error', { message })
-    throw new Error(message)
+    if (mainWindow) {
+      mainWindow.webContents.send('spotify:auth-error', { message })
+    }
+    return { accessToken: '', expiresIn: 0, error: message }
   }
 })

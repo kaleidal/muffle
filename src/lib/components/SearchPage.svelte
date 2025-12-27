@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly, fade } from 'svelte/transition'
-  import { spotifyStore } from '../stores/spotifyStore'
+  import { spotifyStore } from '../stores/spotify'
 
   export let query: string
 
@@ -66,7 +66,7 @@
 </script>
 
 <div
-  class="bg-[#141414] rounded-[40px] h-full px-8 py-6 flex flex-col overflow-hidden"
+  class="bg-[#141414] rounded-[40px] h-full px-8 py-6 flex flex-col overflow-hidden absolute inset-0"
   in:fly={{ x: 18, duration: 220 }}
   out:fade={{ duration: 140 }}
 >

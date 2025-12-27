@@ -2,7 +2,7 @@
   "name": "muffle",
   "version": "1.0.0",
   "description": "A beautiful, fluid Spotify desktop client",
-  "main": "dist-electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build && electron-builder",

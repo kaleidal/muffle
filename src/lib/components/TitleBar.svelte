@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { spotifyStore } from '../stores/spotifyStore'
+  import { spotifyStore } from '../stores/spotify'
   import { navigationStore } from '../stores/navigationStore'
 </script>
 

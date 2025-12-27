@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { spotifyStore } from '../stores/spotifyStore'
+  import { spotifyStore } from '../stores/spotify'
 </script>
 
 <div class="h-full w-full flex items-center justify-center">

@@ -3,7 +3,7 @@
   import TitleBar from './lib/components/TitleBar.svelte'
   import LoginScreen from './lib/components/LoginScreen.svelte'
   import { playerStore } from './lib/stores/playerStore'
-  import { spotifyStore } from './lib/stores/spotifyStore'
+  import { spotifyStore } from './lib/stores/spotify'
   import { navigationStore } from './lib/stores/navigationStore'
   import MadeForYou from './lib/components/MadeForYou.svelte'
   import SearchBar from './lib/components/SearchBar.svelte'
@@ -13,7 +13,11 @@
   import PlaylistPage from './lib/components/PlaylistPage.svelte'
   import SearchPage from './lib/components/SearchPage.svelte'
 
-  spotifyStore.init()
+  try {
+    spotifyStore.init()
+  } catch (error) {
+    console.error('Failed to initialize Spotify store:', error)
+  }
 </script>
 
 <div class="app-container h-screen flex flex-col bg-[#050505] overflow-hidden">
@@ -50,7 +54,7 @@
                 </div>
               </div>
             </div>
-            <div class="flex-1 min-h-0 overflow-visible">
+            <div class="flex-1 min-h-0 overflow-hidden relative">
               {#if $navigationStore.page === 'home'}
                 <MadeForYou />
               {:else if $navigationStore.page === 'playlist' && $navigationStore.playlistId}

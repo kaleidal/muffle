@@ -26,6 +26,10 @@ function createNavigationStore() {
       update((s) => ({ ...s, page: 'playlist', playlistId, searchQuery: '' }))
     },
 
+    openLikedSongs() {
+      update((s) => ({ ...s, page: 'playlist', playlistId: 'liked', searchQuery: '' }))
+    },
+
     setSearchQuery(query: string) {
       const q = query
       update((s) => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { playerStore } from '../stores/playerStore'
-  import { spotifyStore, type SpotifyDevice } from '../stores/spotifyStore'
+  import { spotifyStore, type SpotifyDevice } from '../stores/spotify'
 
   let seeking = false
   let seekValue = 0
