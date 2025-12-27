@@ -1,6 +1,7 @@
 <script lang="ts">
   import { playerStore } from '../stores/playerStore'
   import { spotifyStore, type SpotifyDevice } from '../stores/spotify'
+  import { navigationStore } from '../stores/navigationStore'
 
   let seeking = false
   let seekValue = 0
@@ -90,6 +91,11 @@
     } catch (e) {
       console.error('Transfer failed:', e)
     }
+  }
+
+  function toggleLyrics() {
+    showDevices = false
+    navigationStore.toggleLyrics()
   }
 
   $: if (seekEl) {
@@ -184,6 +190,17 @@
                 </div>
               {/if}
             </div>
+
+            <button
+              class={`h-8 w-8 px-3 rounded-full flex items-center justify-center bouncy-btn text-xs font-extrabold tracking-wide transition-colors ${$navigationStore.page === 'lyrics' ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-white/90'}`}
+              aria-label="Lyrics"
+              onclick={toggleLyrics}
+              title="Lyrics"
+            >
+              <svg width="13" height="16" viewBox="0 0 19 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7.1871 6.601L1.1931 14.791C1.05206 14.9837 0.984615 15.2204 1.00296 15.4585C1.0213 15.6966 1.12422 15.9202 1.2931 16.089L2.1101 16.907C2.28145 17.0782 2.50909 17.1813 2.75076 17.1973C2.99242 17.2133 3.23168 17.1411 3.4241 16.994L11.2771 11M12.6871 20.174C11.6871 19.5 10.5591 19 9.1871 19C7.1291 19 5.2591 21.356 3.1871 21C1.1151 20.644 0.412101 17.631 1.6871 16.5M17.1871 6C17.1871 8.76142 14.9485 11 12.1871 11C9.42568 11 7.1871 8.76142 7.1871 6C7.1871 3.23858 9.42568 1 12.1871 1C14.9485 1 17.1871 3.23858 17.1871 6Z" stroke="white" fill="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
 
             <button
               class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"

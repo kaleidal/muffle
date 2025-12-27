@@ -12,6 +12,7 @@
   import RightPanel from './lib/components/RightPanel.svelte'
   import PlaylistPage from './lib/components/PlaylistPage.svelte'
   import SearchPage from './lib/components/SearchPage.svelte'
+  import LyricsPage from './lib/components/LyricsPage.svelte'
 
   try {
     spotifyStore.init()
@@ -52,6 +53,8 @@
             <div class="flex-1 min-h-0 overflow-visible relative">
               {#if $navigationStore.page === 'home'}
                 <MadeForYou />
+              {:else if $navigationStore.page === 'lyrics'}
+                <LyricsPage />
               {:else if $navigationStore.page === 'playlist' && $navigationStore.playlistId}
                 <PlaylistPage playlistId={$navigationStore.playlistId} />
               {:else if $navigationStore.page === 'search'}

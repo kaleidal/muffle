@@ -138,6 +138,10 @@ function createSpotifyStore() {
   return {
     subscribe,
 
+    getWebPlaybackDeviceId() {
+      return webPlayback.getDeviceId()
+    },
+
     init() {
       attachAuthListeners()
 

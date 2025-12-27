@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store'
 
-export type PageName = 'home' | 'playlist' | 'search'
+export type PageName = 'home' | 'playlist' | 'search' | 'lyrics'
 
 export type NavigationState = {
   page: PageName
@@ -14,6 +14,8 @@ function createNavigationStore() {
     playlistId: null,
     searchQuery: ''
   })
+
+  let lastNonLyrics: NavigationState | null = null
 
   return {
     subscribe,
@@ -30,10 +32,38 @@ function createNavigationStore() {
       update((s) => ({ ...s, page: 'playlist', playlistId: 'liked', searchQuery: '' }))
     },
 
+    openLyrics() {
+      update((s) => {
+        if (s.page !== 'lyrics') lastNonLyrics = s
+        return { ...s, page: 'lyrics', playlistId: null, searchQuery: '' }
+      })
+    },
+
+    closeLyrics() {
+      update((s) => {
+        if (s.page !== 'lyrics') return s
+        if (lastNonLyrics) return lastNonLyrics
+        return { ...s, page: 'home', playlistId: null, searchQuery: '' }
+      })
+    },
+
+    toggleLyrics() {
+      update((s) => {
+        if (s.page === 'lyrics') {
+          if (lastNonLyrics) return lastNonLyrics
+          return { ...s, page: 'home', playlistId: null, searchQuery: '' }
+        }
+
+        lastNonLyrics = s
+        return { ...s, page: 'lyrics', playlistId: null, searchQuery: '' }
+      })
+    },
+
     setSearchQuery(query: string) {
       const q = query
       update((s) => {
         if (q.trim().length) {
+          if (s.page !== 'lyrics') lastNonLyrics = s
           return { ...s, page: 'search', playlistId: null, searchQuery: q }
         }
 
