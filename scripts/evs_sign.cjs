@@ -1,10 +1,12 @@
 const { execSync } = require('child_process')
 
+let ran = false
+
 module.exports = async function (context) {
   const { electronPlatformName, appOutDir } = context
 
-  // Skip in dev
-  if (process.env.NODE_ENV !== 'production') return
+  if (ran) return
+  ran = true
 
   console.log('EVS: Signing with production VMP certificate...')
 

@@ -8,6 +8,7 @@ import { ensureFreshTokenFactory, loadPersistedSession, persistTokens, safeLogou
 import { createPolling } from './store/polling'
 import { createWebPlaybackController } from './webPlayback'
 import { createPlayerCommands } from './store/playerCommands'
+import { mapToTrack } from './mappers'
 import {
   fetchAllPlaylists,
   fetchRecommendations,
@@ -20,6 +21,7 @@ import {
 } from './store/library'
 import { initialSpotifyState, isUnauthorized, type SpotifyState } from './store/state'
 import type { SpotifyUser } from './types'
+import type { SpotifyQueue } from './types'
 import { bestImageUrl } from '../../utils/spotifyImages'
 
 function createSpotifyStore() {
@@ -51,6 +53,8 @@ function createSpotifyStore() {
   let stopAuthListener: null | (() => void) = null
   let stopAuthErrorListener: null | (() => void) = null
 
+  let lastWebPlaybackAt = 0
+
   const storeLike = {
     getState: () => get({ subscribe }),
     update,
@@ -61,10 +65,9 @@ function createSpotifyStore() {
     getAccessToken: async () => ensureFreshToken(),
     onError: (message) => update((s) => ({ ...s, error: message })),
     onPlaybackState: (state) => {
+      lastWebPlaybackAt = Date.now()
       playerStore.setPlaybackState({
         current: state.current,
-        next: state.next,
-        queue: state.queue,
         isPlaying: state.isPlaying,
         progressPct: state.progressPct
       })
@@ -84,12 +87,31 @@ function createSpotifyStore() {
     updateCurrent: (current) => update((s) => ({ ...s, current }))
   })
 
+  const isInAppPlaybackActive = () => {
+    const preferred = !!webPlayback.getPreferredDeviceId()
+    if (!preferred) return false
+    return Date.now() - lastWebPlaybackAt <= 5000
+  }
+
+  const fetchQueueOnce = async (token: string) => {
+    const queue = await apiGet<SpotifyQueue>(token, '/me/player/queue')
+    const nextItem = queue?.queue?.[0] ?? null
+    const nextTrack = nextItem ? mapToTrack(nextItem) : null
+    const queueTracks = (queue?.queue ?? []).slice(0, 20).map(mapToTrack)
+    playerStore.setSpotifyQueue({ next: nextTrack, queue: queueTracks })
+  }
+
   const polling = createPolling({
     fetchTick: async () => {
       try {
         const token = await ensureFreshToken()
         if (!token) return
-        await fetchPlaybackOnce(token)
+
+        if (isInAppPlaybackActive()) {
+          await fetchQueueOnce(token)
+        } else {
+          await fetchPlaybackOnce(token)
+        }
 
         const p = get(playerStore)
         if (p.currentTrack) lastKnownTrack = p.currentTrack
@@ -105,7 +127,8 @@ function createSpotifyStore() {
     refreshPlayback: async () => {
       const token = await ensureFreshToken()
       if (!token) return
-      await fetchPlaybackOnce(token)
+      if (isInAppPlaybackActive()) await fetchQueueOnce(token)
+      else await fetchPlaybackOnce(token)
     }
   })
 

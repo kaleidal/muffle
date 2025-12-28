@@ -61,6 +61,7 @@ function createPlayerStore() {
   })
 
   let progressInterval: ReturnType<typeof setInterval> | null = null
+  let lastTickAt = 0
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   let lastPeekTrackId: string | null = null
 
@@ -69,11 +70,13 @@ function createPlayerStore() {
       clearInterval(progressInterval)
       progressInterval = null
     }
+    lastTickAt = 0
   }
 
   const startTicking = () => {
     if (progressInterval) return
-    progressInterval = setInterval(tick, 1000)
+    lastTickAt = Date.now()
+    progressInterval = setInterval(tick, 250)
   }
 
   const setTransitioning = () => {
@@ -102,13 +105,26 @@ function createPlayerStore() {
   }
 
   const tick = () => {
+    const now = Date.now()
     update((state) => {
       if (!state.currentTrack) return state
 
-      const step = 100 / (state.currentTrack.duration / 1000)
+      if (!lastTickAt) {
+        lastTickAt = now
+        return state
+      }
+
+      const elapsedMs = Math.max(0, now - lastTickAt)
+      lastTickAt = now
+
+      const duration = state.currentTrack.duration
+      if (!duration) return state
+
+      const step = (elapsedMs / duration) * 100
       const newProgress = state.progress + step
 
-      const remainingMs = state.currentTrack.duration * (1 - state.progress / 100)
+      const clampedProgress = clamp(newProgress, 0, 100)
+      const remainingMs = duration * (1 - clampedProgress / 100)
       const showNextPreview = remainingMs <= 15000 && !!state.nextTrack
 
       if (showNextPreview && !state.showNextPreview && state.nextTrack?.id) {
@@ -124,7 +140,7 @@ function createPlayerStore() {
         return { ...state, progress: 100, showNextPreview: false, peekLatched: state.peekLatched || showNextPreview }
       }
 
-      return { ...state, progress: newProgress, showNextPreview, peekLatched }
+      return { ...state, progress: clampedProgress, showNextPreview, peekLatched }
     })
   }
 
@@ -139,7 +155,13 @@ function createPlayerStore() {
       update((state) => ({ ...state, expanded: !!expanded }))
     },
 
-    setPlaybackState(args: { current: Track | null; next: Track | null; queue: Track[]; isPlaying: boolean; progressPct: number }) {
+    setPlaybackState(args: {
+      current: Track | null
+      next?: Track | null
+      queue?: Track[]
+      isPlaying: boolean
+      progressPct: number
+    }) {
       let changedTrack = false
       let toastTrack: Track | null = null
       update((state) => {
@@ -147,7 +169,8 @@ function createPlayerStore() {
         const nextId = args.current?.id ?? null
         changedTrack = !!nextId && nextId !== prevId
 
-        const effectiveNext = state.queueSource === 'spotify' ? args.next : state.nextTrack
+        const nextFromArgs = args.next ?? null
+        const effectiveNext = state.queueSource === 'spotify' ? nextFromArgs ?? state.nextTrack : state.nextTrack
 
         if (state.showNextPreview && effectiveNext?.id && !lastPeekTrackId) {
           lastPeekTrackId = effectiveNext.id
@@ -166,14 +189,26 @@ function createPlayerStore() {
         return {
           ...state,
           currentTrack: args.current,
-          nextTrack: state.queueSource === 'spotify' ? args.next : state.nextTrack,
-          queue: state.queueSource === 'spotify' ? args.queue : state.queue,
+          nextTrack:
+            state.queueSource === 'spotify'
+              ? args.next === undefined
+                ? state.nextTrack
+                : nextFromArgs
+              : state.nextTrack,
+          queue:
+            state.queueSource === 'spotify'
+              ? args.queue === undefined
+                ? state.queue
+                : args.queue
+              : state.queue,
           isPlaying: args.isPlaying,
           progress: clamp(args.progressPct, 0, 100),
           showNextPreview,
           peekLatched
         }
       })
+
+      lastTickAt = Date.now()
 
       if (args.isPlaying) startTicking()
       else stopTicking()
@@ -244,6 +279,14 @@ function createPlayerStore() {
 
     seek(progress: number) {
       update((state) => ({ ...state, progress: clamp(progress, 0, 100) }))
+      lastTickAt = Date.now()
+    },
+
+    setSpotifyQueue(args: { next: Track | null; queue: Track[] }) {
+      update((state) => {
+        if (state.queueSource !== 'spotify') return state
+        return { ...state, nextTrack: args.next, queue: args.queue }
+      })
     },
 
     setVolume(volume: number) {

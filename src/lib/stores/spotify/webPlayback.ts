@@ -12,7 +12,7 @@ export type WebPlaybackStatus = 'idle' | 'in-progress' | 'ready'
 export function createWebPlaybackController(args: {
   getAccessToken: () => Promise<string | null>
   onError: (message: string) => void
-  onPlaybackState: (state: { current: Track; next: Track | null; queue: Track[]; isPlaying: boolean; progressPct: number }) => void
+  onPlaybackState: (state: { current: Track; isPlaying: boolean; progressPct: number }) => void
 }) {
   let webPlayer: any | null = null
   let initState: WebPlaybackStatus = 'idle'
@@ -116,35 +116,10 @@ export function createWebPlaybackController(args: {
           uri: currentItem.uri ?? ''
         }
 
-        const nextItem = state.track_window?.next_tracks?.[0] ?? null
-        const nextTrack: Track | null = nextItem
-          ? {
-              id: nextItem.id,
-              name: nextItem.name,
-              artist: (nextItem.artists || []).map((a: any) => a.name).join(', '),
-              album: nextItem.album?.name ?? '',
-              albumArt: nextItem.album?.images?.[0]?.url ?? '',
-              duration: nextItem.duration_ms ?? 0,
-              uri: nextItem.uri ?? ''
-            }
-          : null
-
-        const queueTracks: Track[] = (state.track_window?.next_tracks ?? []).slice(0, 20).map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          artist: (t.artists || []).map((a: any) => a.name).join(', '),
-          album: t.album?.name ?? '',
-          albumArt: t.album?.images?.[0]?.url ?? '',
-          duration: t.duration_ms ?? 0,
-          uri: t.uri ?? ''
-        }))
-
         const progressPct = currentTrack.duration ? (state.position / currentTrack.duration) * 100 : 0
 
         args.onPlaybackState({
           current: currentTrack,
-          next: nextTrack,
-          queue: queueTracks,
           isPlaying: !state.paused,
           progressPct
         })

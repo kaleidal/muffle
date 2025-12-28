@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "A beautiful, fluid Spotify desktop client",
   "main": "electron/main.cjs",
+  "homepage": "https://muffle.kaleid.al",
+  "author": {
+    "name": "Kaleidal",
+    "email": "hello@kaleid.al"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && electron-builder",
@@ -12,7 +17,6 @@
   },
   "type": "module",
   "keywords": ["spotify", "music", "electron", "svelte"],
-  "author": "",
   "license": "MIT",
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
@@ -23,6 +27,7 @@
     "electron": "github:castlabs/electron-releases#v34.0.0+wvcus",
     "electron-builder": "^25.1.8",
     "postcss": "^8.4.49",
+    "sharp": "^0.34.5",
     "svelte": "^5.16.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3",
@@ -36,25 +41,31 @@
   },
   "build": {
     "appId": "al.kaleid.muffle",
+    "afterPack": "scripts/evs_sign.cjs",
     "afterSign": "scripts/evs_sign.cjs",
     "productName": "Muffle",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "kaleidal",
+      "repo": "muffle"
     },
     "electronDownload": {
       "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "electron/**/*"
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.ico"
+      "icon": "public/icon.png"
     },
     "mac": {
       "target": "dmg",
-      "icon": "public/icon.icns",
+      "icon": "public/icon.png",
       "hardenedRuntime": true
     },
     "linux": {

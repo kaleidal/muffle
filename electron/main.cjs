@@ -1,7 +1,17 @@
-const { app, BrowserWindow, ipcMain, shell, session } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, session, components } = require('electron')
 const crypto = require('crypto')
 const http = require('http')
 const path = require('path')
+
+const shouldEnableDrm =
+  process.env.MUFFLE_ENABLE_DRM === '1' ||
+  process.env.NODE_ENV === 'production' ||
+  app.isPackaged
+
+if (shouldEnableDrm) {
+  app.commandLine.appendSwitch('enable-widevine-cdm')
+  app.commandLine.appendSwitch('no-verify-widevine-cdm')
+}
 
 let mainWindow = null
 
@@ -19,6 +29,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 if (process.platform === 'win32') {
   try {
+    app.setAppUserModelId("al.kaleid.muffle");
     const squirrelStartup = require('electron-squirrel-startup')
     if (squirrelStartup) app.quit()
   } catch {
@@ -216,7 +227,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
-      sandbox: false,
+      sandbox: app.isPackaged,
       plugins: true
     },
     icon: path.join(__dirname, '../public/icon.png')
@@ -244,17 +255,23 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const isDev = !app.isPackaged
   const devOrigin = 'http://localhost:5173'
+
+  if (shouldEnableDrm) {
+    await components.whenReady()
+    console.log('components ready:', components.status())
+  }
+
   const csp = [
     isDev ? `default-src 'self' ${devOrigin}` : "default-src 'self'",
     isDev
       ? `script-src 'self' 'unsafe-eval' 'unsafe-inline' ${devOrigin} https://sdk.scdn.co`
       : "script-src 'self' 'unsafe-inline' https://sdk.scdn.co",
     isDev
-      ? "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com http://127.0.0.1:5174 ws://localhost:5173 http://localhost:5173"
-      : "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com http://127.0.0.1:5174",
+      ? "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com https://lrclib.net http://127.0.0.1:5174 ws://localhost:5173 http://localhost:5173"
+      : "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com https://lrclib.net http://127.0.0.1:5174",
     isDev ? `img-src 'self' data: https: ${devOrigin}` : "img-src 'self' data: https:",
     isDev
       ? `style-src 'self' 'unsafe-inline' ${devOrigin} https://fonts.googleapis.com`
@@ -264,7 +281,7 @@ app.whenReady().then(() => {
       : "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "media-src 'self' blob: https: https://*.spotifycdn.com",
-    "frame-src https://accounts.spotify.com https://sdk.scdn.co"
+    "frame-src https://accounts.spotify.com https://sdk.scdn.co",
   ].join('; ')
 
   if (!isDev) {
