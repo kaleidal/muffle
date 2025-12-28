@@ -11,7 +11,6 @@ import { createPlayerCommands } from './store/playerCommands'
 import { mapToTrack } from './mappers'
 import {
   fetchAllPlaylists,
-  fetchRecommendations,
   fetchRecentlyPlayedPlaylistContexts,
   fetchTopArtists,
   fetchTopTracks,
@@ -43,7 +42,7 @@ function createSpotifyStore() {
     | null
     | {
         continuePlaylists: Array<{ id: string; name: string; images: { url: string }[] }>
-        topTracks: Array<{ id: string; name: string; image: string; uri: string }>
+        topTracks: Array<{ id: string; name: string; image: string; uri: string; artist: string; album: string; albumArt: string; duration: number }>
         topArtists: Array<{ id: string; name: string; image: string; uri: string }>
         mixes: Array<{ id: string; name: string; image: string; uris: string[] }>
       } = null
@@ -361,7 +360,11 @@ function createSpotifyStore() {
                     id: t.id,
                     name: t.name,
                     image: t.albumArt,
-                    uri: t.uri
+                    uri: t.uri,
+                    artist: t.artist,
+                    album: t.album,
+                    albumArt: t.albumArt,
+                    duration: t.duration
                   }))
                 : []
 
@@ -373,18 +376,6 @@ function createSpotifyStore() {
             const topArtists = fallbackTopArtists
 
             const mixes: Array<{ id: string; name: string; image: string; uris: string[] }> = []
-            const seed = topArtists.slice(0, 6)
-            const recRes = await Promise.allSettled(seed.map((a) => fetchRecommendations(token, { seedArtistIds: [a.id], limit: 30 })))
-
-            for (let i = 0; i < seed.length; i++) {
-              const a = seed[i]
-              const r = recRes[i]
-              if (r.status !== 'fulfilled') continue
-              const uris = (r.value || []).map((t) => t.uri).filter(Boolean)
-              if (!uris.length) continue
-              mixes.push({ id: `mix:${a.id}`, name: `Because you like ${a.name}`, image: a.image, uris })
-              if (mixes.length >= 6) break
-            }
 
             homeCache = {
               continuePlaylists: continuePlaylists.map((p: any) => ({ id: p.id, name: p.name, images: p.images })),

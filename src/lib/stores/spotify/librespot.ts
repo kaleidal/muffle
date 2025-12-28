@@ -53,7 +53,7 @@ export function createLibrespotController(args: {
 
   const waitForMuffleDevice = async (maxWaitMs = 10000): Promise<string | null> => {
     const startTime = Date.now()
-    const pollInterval = 500
+    const pollInterval = 1500
 
     while (Date.now() - startTime < maxWaitMs) {
       const device = await findMuffleDevice()

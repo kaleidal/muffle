@@ -16,7 +16,7 @@ export function fetchPlaybackOnceFactory(args: { updateCurrent: (current: Spotif
     const queue = queueRes.status === 'fulfilled' ? queueRes.value : ({ currently_playing: null, queue: [] } as any)
 
     if (playerRes.status === 'fulfilled' && typeof playerRes.value?.shuffle_state === 'boolean') {
-      playerStore.setShuffle(playerRes.value.shuffle_state)
+      playerStore.setShuffleFromServer(playerRes.value.shuffle_state)
     }
 
     args.updateCurrent(current)

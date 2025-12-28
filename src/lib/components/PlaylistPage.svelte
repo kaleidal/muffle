@@ -93,8 +93,10 @@
     if (!data) return
     try {
       const liked = playlistId === 'liked' || data.id === 'liked'
+      const t = data.tracks[position]
+      if (t) playerStore.setOptimisticTrack(t)
+
       if (liked) {
-        const t = data.tracks[position]
         if (!t?.uri) return
         await spotifyStore.playTrackUri(t.uri)
         return

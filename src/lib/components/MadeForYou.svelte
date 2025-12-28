@@ -3,6 +3,7 @@
   import { fly, fade } from 'svelte/transition'
   import PlaylistCard from './PlaylistCard.svelte'
   import { spotifyStore } from '../stores/spotify'
+  import { playerStore } from '../stores/playerStore'
     let menu:
       | null
       | {
@@ -29,6 +30,10 @@
     image: string
     kind: 'playlist' | 'track' | 'artist' | 'mix'
     uri?: string
+    artist?: string
+    album?: string
+    albumArt?: string
+    duration?: number
   }
 
   type HomeSection = {
@@ -330,7 +335,20 @@
         style={`top:${overlayRect.top}px; left:${overlayRect.left}px; width:${overlayRect.width}px; height:${overlayRect.height}px; --card-accent: ${cardAccent[heroCard.image] || heroRgb};`}
         onclick={async () => {
           if (heroCard.kind === 'playlist' && heroCard.uri) return await spotifyStore.playContextUri(heroCard.uri)
-          if (heroCard.kind === 'track' && heroCard.uri) return await spotifyStore.playTrackUri(heroCard.uri)
+          if (heroCard.kind === 'track' && heroCard.uri) {
+            if (heroCard.artist && heroCard.album && heroCard.albumArt && typeof heroCard.duration === 'number') {
+              playerStore.setOptimisticTrack({
+                id: heroCard.id,
+                name: heroCard.name,
+                artist: heroCard.artist,
+                album: heroCard.album,
+                albumArt: heroCard.albumArt,
+                duration: heroCard.duration,
+                uri: heroCard.uri
+              })
+            }
+            return await spotifyStore.playTrackUri(heroCard.uri)
+          }
           if (heroCard.kind === 'artist' && heroCard.uri) return await spotifyStore.playContextUri(heroCard.uri)
         }}
         oncontextmenu={(e) => (heroCard.kind === 'track' ? openUriMenu(e, heroCard.uri) : undefined)}
@@ -369,7 +387,20 @@
             style={overlayActive ? 'opacity:0; pointer-events:none;' : undefined}
             onclick={async () => {
               if (heroCard.kind === 'playlist' && heroCard.uri) return await spotifyStore.playContextUri(heroCard.uri)
-              if (heroCard.kind === 'track' && heroCard.uri) return await spotifyStore.playTrackUri(heroCard.uri)
+              if (heroCard.kind === 'track' && heroCard.uri) {
+                if (heroCard.artist && heroCard.album && heroCard.albumArt && typeof heroCard.duration === 'number') {
+                  playerStore.setOptimisticTrack({
+                    id: heroCard.id,
+                    name: heroCard.name,
+                    artist: heroCard.artist,
+                    album: heroCard.album,
+                    albumArt: heroCard.albumArt,
+                    duration: heroCard.duration,
+                    uri: heroCard.uri
+                  })
+                }
+                return await spotifyStore.playTrackUri(heroCard.uri)
+              }
               if (heroCard.kind === 'artist' && heroCard.uri) return await spotifyStore.playContextUri(heroCard.uri)
             }}
             oncontextmenu={(e) => (heroCard.kind === 'track' ? openUriMenu(e, heroCard.uri) : undefined)}
@@ -453,7 +484,20 @@
                       onmouseleave={() => clearHero()}
                       onSelect={async () => {
                         if (c.kind === 'playlist' && c.uri) return await spotifyStore.playContextUri(c.uri)
-                        if (c.kind === 'track' && c.uri) return await spotifyStore.playTrackUri(c.uri)
+                        if (c.kind === 'track' && c.uri) {
+                          if (c.artist && c.album && c.albumArt && typeof c.duration === 'number') {
+                            playerStore.setOptimisticTrack({
+                              id: c.id,
+                              name: c.name,
+                              artist: c.artist,
+                              album: c.album,
+                              albumArt: c.albumArt,
+                              duration: c.duration,
+                              uri: c.uri
+                            })
+                          }
+                          return await spotifyStore.playTrackUri(c.uri)
+                        }
                         if (c.kind === 'artist' && c.uri) return await spotifyStore.playContextUri(c.uri)
                         if (c.kind === 'mix') return await spotifyStore.playMix(c.id)
                       }}

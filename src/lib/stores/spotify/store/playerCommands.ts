@@ -121,11 +121,20 @@ export function createPlayerCommands(args: {
     if (!state.currentTrack) return
 
     const positionMs = Math.max(0, Math.min(state.currentTrack.duration, Math.floor((pct / 100) * state.currentTrack.duration)))
-    playerStore.seek(pct)
+    const prevProgress = state.progress
+    playerStore.setOptimisticSeek(pct)
 
     const activeDeviceId = await getActiveDeviceId(token)
     const qs = activeDeviceId ? `&device_id=${encodeURIComponent(activeDeviceId)}` : ''
-    await apiCall(token, { method: 'PUT', path: `/me/player/seek?position_ms=${positionMs}${qs}` })
+
+    try {
+      await apiCall(token, { method: 'PUT', path: `/me/player/seek?position_ms=${positionMs}${qs}` })
+    } catch (e) {
+      playerStore.clearOptimisticSeek()
+      playerStore.seek(prevProgress)
+      void args.refreshPlayback()
+      throw e
+    }
 
     void args.refreshPlayback()
   }
@@ -272,12 +281,25 @@ export function createPlayerCommands(args: {
   }
 
   const setShuffle = async (enabled: boolean) => {
+    const prev = get(playerStore).shuffle
+    if (prev !== enabled) playerStore.setOptimisticShuffle(enabled)
+
     const token = await args.ensureFreshToken()
-    if (!token) return
+    if (!token) {
+      playerStore.clearOptimisticShuffle()
+      playerStore.setShuffle(prev)
+      return
+    }
 
-    await runPlayerCommand(token, { method: 'PUT', path: `/me/player/shuffle?state=${enabled ? 'true' : 'false'}` })
+    try {
+      await runPlayerCommand(token, { method: 'PUT', path: `/me/player/shuffle?state=${enabled ? 'true' : 'false'}` })
+    } catch (e) {
+      playerStore.clearOptimisticShuffle()
+      playerStore.setShuffle(prev)
+      void args.refreshPlayback()
+      throw e
+    }
 
-    playerStore.setShuffle(enabled)
     void args.refreshPlayback()
   }
 

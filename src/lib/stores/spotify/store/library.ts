@@ -159,23 +159,3 @@ export async function fetchRecentlyPlayedPlaylistContexts(token: string, limit =
 
   return playlistIds
 }
-
-export async function fetchRecommendations(
-  token: string,
-  args: { seedArtistIds?: string[]; seedTrackIds?: string[]; limit?: number }
-): Promise<PlayableTrack[]> {
-  const seedsArtists = (args.seedArtistIds || []).filter(Boolean)
-  const seedsTracks = (args.seedTrackIds || []).filter(Boolean)
-  const limit = Math.max(1, Math.min(50, args.limit ?? 30))
-
-  const qs = new URLSearchParams({
-    limit: String(limit),
-    market: 'from_token'
-  })
-
-  if (seedsArtists.length) qs.set('seed_artists', seedsArtists.slice(0, 5).join(','))
-  if (seedsTracks.length) qs.set('seed_tracks', seedsTracks.slice(0, 5).join(','))
-
-  const res = await apiGet<SpotifyRecommendationsResponse>(token, `/recommendations?${qs.toString()}`)
-  return (res.tracks || []).map(mapToPlayableTrack)
-}

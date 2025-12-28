@@ -65,6 +65,8 @@ function createPlayerStore() {
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   let lastPeekTrackId: string | null = null
   let optimisticIsPlaying: null | { value: boolean; until: number } = null
+  let optimisticSeek: null | { value: number; until: number; trackId: string | null } = null
+  let optimisticShuffle: null | { value: boolean; until: number } = null
 
   const stopTicking = () => {
     if (progressInterval) {
@@ -148,7 +150,7 @@ function createPlayerStore() {
   const api = {
     subscribe,
 
-    setOptimisticIsPlaying(isPlaying: boolean, ttlMs = 3500) {
+    setOptimisticIsPlaying(isPlaying: boolean, ttlMs = 8000) {
       const until = Date.now() + Math.max(0, ttlMs | 0)
       optimisticIsPlaying = ttlMs > 0 ? { value: !!isPlaying, until } : null
 
@@ -160,6 +162,45 @@ function createPlayerStore() {
 
     clearOptimisticIsPlaying() {
       optimisticIsPlaying = null
+    },
+
+    setOptimisticSeek(progressPct: number, ttlMs = 5000) {
+      const now = Date.now()
+      const until = now + Math.max(0, ttlMs | 0)
+      update((state) => {
+        const pct = clamp(progressPct, 0, 100)
+        optimisticSeek = ttlMs > 0 ? { value: pct, until, trackId: state.currentTrack?.id ?? null } : null
+        return { ...state, progress: pct, showNextPreview: false, peekLatched: false }
+      })
+      lastTickAt = now
+    },
+
+    clearOptimisticSeek() {
+      optimisticSeek = null
+    },
+
+    setOptimisticShuffle(shuffle: boolean, ttlMs = 8000) {
+      const until = Date.now() + Math.max(0, ttlMs | 0)
+      optimisticShuffle = ttlMs > 0 ? { value: !!shuffle, until } : null
+      update((state) => ({ ...state, shuffle: !!shuffle }))
+    },
+
+    clearOptimisticShuffle() {
+      optimisticShuffle = null
+    },
+
+    setShuffleFromServer(shuffle: boolean) {
+      const now = Date.now()
+      if (optimisticShuffle) {
+        if (now >= optimisticShuffle.until) {
+          optimisticShuffle = null
+        } else if (!!shuffle === optimisticShuffle.value) {
+          optimisticShuffle = null
+        } else {
+          return
+        }
+      }
+      update((state) => ({ ...state, shuffle: !!shuffle }))
     },
 
     setOptimisticTrack(track: Track) {
@@ -211,6 +252,27 @@ function createPlayerStore() {
         }
       }
 
+      const incomingTrackId = args.current?.id ?? null
+      const allowProgressFromServer = () => {
+        if (!optimisticSeek) return true
+        if (now >= optimisticSeek.until) {
+          optimisticSeek = null
+          return true
+        }
+        if (optimisticSeek.trackId && incomingTrackId && optimisticSeek.trackId !== incomingTrackId) {
+          optimisticSeek = null
+          return true
+        }
+
+        const serverClose = Math.abs((args.progressPct ?? 0) - optimisticSeek.value) <= 1.25
+        if (serverClose) {
+          optimisticSeek = null
+          return true
+        }
+
+        return false
+      }
+
       update((state) => {
         const prevId = state.currentTrack?.id ?? null
         const nextId = args.current?.id ?? null
@@ -226,7 +288,9 @@ function createPlayerStore() {
         const suppressForPeek = !!(changedTrack && lastPeekTrackId && nextId && lastPeekTrackId === nextId)
         toastTrack = changedTrack && !suppressForPeek ? args.current : null
 
-        const remainingMs = args.current ? args.current.duration * (1 - args.progressPct / 100) : Infinity
+        const nextProgress = allowProgressFromServer() ? clamp(args.progressPct, 0, 100) : state.progress
+
+        const remainingMs = args.current ? args.current.duration * (1 - nextProgress / 100) : Infinity
         const showNextPreview = remainingMs <= 15000 && !!effectiveNext
 
         // Non-sticky latch: if progress moves back out of the 15s window (seek), it turns off.
@@ -249,7 +313,7 @@ function createPlayerStore() {
                 : args.queue
               : state.queue,
           isPlaying: effectiveIsPlaying,
-          progress: clamp(args.progressPct, 0, 100),
+          progress: nextProgress,
           showNextPreview,
           peekLatched
         }

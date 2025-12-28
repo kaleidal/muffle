@@ -2,6 +2,7 @@
   import { fly, fade } from 'svelte/transition'
   import { onDestroy, onMount } from 'svelte'
   import { spotifyStore } from '../stores/spotify'
+  import { playerStore } from '../stores/playerStore'
 
   export let query: string
 
@@ -81,9 +82,10 @@
     }, 240)
   }
 
-  async function playTrack(uri: string) {
+  async function playTrack(t: SearchTrack) {
     try {
-      await spotifyStore.playTrackUri(uri)
+      if (t) playerStore.setOptimisticTrack(t)
+      await spotifyStore.playTrackUri(t.uri)
     } catch (e) {
       console.error('Play track failed:', e)
     }
@@ -116,7 +118,7 @@
         {#each results as t, i (`${t.uri}-${i}`)}
           <button
             class="px-4 py-3 rounded-3xl hover:bg-white/5 transition-colors flex items-center gap-4 text-left"
-            onclick={() => playTrack(t.uri)}
+            onclick={() => playTrack(t)}
             oncontextmenu={(e) => openTrackMenu(e, t)}
             aria-label={`Play ${t.name}`}
           >
