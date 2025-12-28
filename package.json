@@ -41,8 +41,6 @@
   },
   "build": {
     "appId": "al.kaleid.muffle",
-    "afterPack": "scripts/evs_sign.cjs",
-    "afterSign": "scripts/evs_sign.cjs",
     "productName": "Muffle",
     "directories": {
       "output": "release"
