@@ -37,6 +37,10 @@ export type SpotifyQueue = {
   queue: NonNullable<SpotifyCurrentlyPlaying['item']>[]
 }
 
+export type SpotifyMePlayer = {
+  shuffle_state: boolean
+}
+
 export type SpotifyDevice = {
   id: string | null
   name: string

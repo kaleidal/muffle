@@ -1,6 +1,6 @@
 {
   "name": "muffle",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "A beautiful, fluid Spotify desktop client",
   "main": "electron/main.cjs",
   "homepage": "https://muffle.kaleid.al",
@@ -24,7 +24,7 @@
     "@types/node": "^25.0.3",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
-    "electron": "github:castlabs/electron-releases#v34.0.0+wvcus",
+    "electron": "^39.2.7",
     "electron-builder": "^25.1.8",
     "postcss": "^8.4.49",
     "sharp": "^0.34.5",
@@ -52,12 +52,16 @@
       "owner": "kaleidal",
       "repo": "muffle"
     },
-    "electronDownload": {
-      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
-    },
     "files": [
       "dist/**/*",
       "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/librespot",
+        "to": "librespot",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": "nsis",

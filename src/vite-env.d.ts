@@ -14,10 +14,11 @@ declare global {
         callback: (tokens: { accessToken: string; refreshToken: string | null; expiresIn: number }) => void
       ) => () => void
       onSpotifyAuthError: (callback: (err: { message: string }) => void) => () => void
-    }
 
-    Spotify?: any
-    onSpotifyWebPlaybackSDKReady?: () => void
+      librespotStatus: () => Promise<{ running: boolean; ready: boolean; available: boolean }>
+      librespotRestart: () => Promise<void>
+      onLibrespotReady: (callback: () => void) => () => void
+    }
   }
 }
 

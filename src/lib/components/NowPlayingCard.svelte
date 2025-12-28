@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store'
   import { playerStore } from '../stores/playerStore'
   import { spotifyStore, type SpotifyDevice } from '../stores/spotify'
   import { navigationStore } from '../stores/navigationStore'
@@ -77,22 +78,11 @@
 
     loadingDevices = true
     try {
+      await spotifyStore.ensureLibrespotReady().catch(() => {})
       devices = await spotifyStore.getDevices()
     } catch (e) {
       console.error('Get devices failed:', e)
       devices = []
-    } finally {
-      loadingDevices = false
-    }
-  }
-
-  async function enableInAppPlayback() {
-    loadingDevices = true
-    try {
-      await spotifyStore.ensureWebPlaybackReady()
-      devices = await spotifyStore.getDevices()
-    } catch (e) {
-      console.error('Enable in-app playback failed:', e)
     } finally {
       loadingDevices = false
     }
@@ -105,6 +95,15 @@
       showDevices = false
     } catch (e) {
       console.error('Transfer failed:', e)
+    }
+  }
+
+  async function toggleShuffle() {
+    try {
+      const next = !get(playerStore).shuffle
+      await spotifyStore.setShuffle(next)
+    } catch (e) {
+      console.error('Shuffle toggle failed:', e)
     }
   }
 
@@ -206,15 +205,6 @@
                 <div class="absolute left-0 bottom-11 w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30">
                   <p class="text-white/60 text-xs font-semibold px-2 pb-2">DEVICES</p>
 
-                  <button
-                    class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn"
-                    onclick={enableInAppPlayback}
-                    disabled={loadingDevices}
-                    aria-label="Enable in-app playback"
-                  >
-                    Enable in-app playback
-                  </button>
-
                   {#if loadingDevices}
                     <div class="px-2 py-2 text-white/50 text-sm">Loading…</div>
                   {:else if devices.length === 0}
@@ -251,6 +241,18 @@
               <svg width="13" height="13" viewBox="0 0 19 23" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M7.1871 6.601L1.1931 14.791C1.05206 14.9837 0.984615 15.2204 1.00296 15.4585C1.0213 15.6966 1.12422 15.9202 1.2931 16.089L2.1101 16.907C2.28145 17.0782 2.50909 17.1813 2.75076 17.1973C2.99242 17.2133 3.23168 17.1411 3.4241 16.994L11.2771 11M12.6871 20.174C11.6871 19.5 10.5591 19 9.1871 19C7.1291 19 5.2591 21.356 3.1871 21C1.1151 20.644 0.412101 17.631 1.6871 16.5M17.1871 6C17.1871 8.76142 14.9485 11 12.1871 11C9.42568 11 7.1871 8.76142 7.1871 6C7.1871 3.23858 9.42568 1 12.1871 1C14.9485 1 17.1871 3.23858 17.1871 6Z" stroke="white" fill="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
+            </button>
+
+            <button
+              class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center bouncy-btn"
+              onclick={toggleShuffle}
+              aria-label={$playerStore.shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+              aria-pressed={$playerStore.shuffle}
+              title={$playerStore.shuffle ? 'Shuffle: on' : 'Shuffle: off'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class={`${$playerStore.shuffle ? 'text-white' : 'text-white/35'}`}>
+                <path d="M18 14L22 18M22 18L18 22M22 18H15.959C15.3036 17.9933 14.6598 17.8257 14.0844 17.5118C13.509 17.1979 13.0195 16.7474 12.659 16.2L12.3 15.75M18 2L22 6M22 6L18 10M22 6L16.027 6C15.3805 5.99558 14.7426 6.14794 14.1679 6.44401C13.5931 6.74008 13.0987 7.17105 12.727 7.7L7.273 16.3C6.90127 16.829 6.40687 17.2599 5.83215 17.556C5.25742 17.8521 4.61949 18.0044 3.973 18H2M2 6H3.972C4.71746 5.99481 5.44954 6.19805 6.08564 6.58678C6.72174 6.9755 7.23655 7.53426 7.572 8.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
             </button>
 
             <div class="w-28">
@@ -376,15 +378,6 @@
                 {#if showDevices}
                   <div class="absolute right-0 bottom-10 w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30">
                     <p class="text-white/60 text-xs font-semibold px-2 pb-2">DEVICES</p>
-
-                    <button
-                      class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn"
-                      onclick={enableInAppPlayback}
-                      disabled={loadingDevices}
-                      aria-label="Enable in-app playback"
-                    >
-                      Enable in-app playback
-                    </button>
 
                     {#if loadingDevices}
                       <div class="px-2 py-2 text-white/50 text-sm">Loading…</div>

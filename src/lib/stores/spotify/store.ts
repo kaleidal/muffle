@@ -6,7 +6,7 @@ import { DEFAULT_SCOPES, getClientId } from './config'
 import { fetchPlaybackOnceFactory } from './store/playback'
 import { ensureFreshTokenFactory, loadPersistedSession, persistTokens, safeLogout } from './store/auth'
 import { createPolling } from './store/polling'
-import { createWebPlaybackController } from './webPlayback'
+import { createLibrespotController } from './librespot'
 import { createPlayerCommands } from './store/playerCommands'
 import { mapToTrack } from './mappers'
 import {
@@ -53,45 +53,40 @@ function createSpotifyStore() {
   let stopAuthListener: null | (() => void) = null
   let stopAuthErrorListener: null | (() => void) = null
 
-  let lastWebPlaybackAt = 0
-
   const storeLike = {
     getState: () => get({ subscribe }),
     update,
     set
   }
 
-  const webPlayback = createWebPlaybackController({
+  const librespotController = createLibrespotController({
     getAccessToken: async () => ensureFreshToken(),
-    onError: (message) => update((s) => ({ ...s, error: message })),
-    onPlaybackState: (state) => {
-      lastWebPlaybackAt = Date.now()
-      playerStore.setPlaybackState({
-        current: state.current,
-        isPlaying: state.isPlaying,
-        progressPct: state.progressPct
-      })
-
-      if (state.current) lastKnownTrack = state.current
-    }
+    onReady: () => {
+      console.log('Librespot device is ready')
+      void (async () => {
+        try {
+          await librespotController.refreshDeviceId()
+          const token = await ensureFreshToken()
+          if (!token) return
+          void ensureLibrespotIsActive(token)
+        } catch {
+          // ignore
+        }
+      })()
+    },
+    onError: (message) => update((s) => ({ ...s, error: message }))
   })
   const stopPlaybackPolling = () => polling.stop()
 
   const ensureFreshToken = ensureFreshTokenFactory({
     store: storeLike,
     stopPlaybackPolling,
-    webPlaybackDisconnect: () => webPlayback.disconnect()
+    webPlaybackDisconnect: () => librespotController.disconnect()
   })
 
   const fetchPlaybackOnce = fetchPlaybackOnceFactory({
     updateCurrent: (current) => update((s) => ({ ...s, current }))
   })
-
-  const isInAppPlaybackActive = () => {
-    const preferred = !!webPlayback.getPreferredDeviceId()
-    if (!preferred) return false
-    return Date.now() - lastWebPlaybackAt <= 5000
-  }
 
   const fetchQueueOnce = async (token: string) => {
     const queue = await apiGet<SpotifyQueue>(token, '/me/player/queue')
@@ -107,11 +102,7 @@ function createSpotifyStore() {
         const token = await ensureFreshToken()
         if (!token) return
 
-        if (isInAppPlaybackActive()) {
-          await fetchQueueOnce(token)
-        } else {
-          await fetchPlaybackOnce(token)
-        }
+        await fetchPlaybackOnce(token)
 
         const p = get(playerStore)
         if (p.currentTrack) lastKnownTrack = p.currentTrack
@@ -123,18 +114,49 @@ function createSpotifyStore() {
 
   const commands = createPlayerCommands({
     ensureFreshToken,
-    webPlayback,
+    librespotController,
     refreshPlayback: async () => {
       const token = await ensureFreshToken()
       if (!token) return
-      if (isInAppPlaybackActive()) await fetchQueueOnce(token)
-      else await fetchPlaybackOnce(token)
+      await fetchPlaybackOnce(token)
     }
   })
 
+  const ensureLibrespotIsActive = async (token: string) => {
+    try {
+      const devicesRes = await apiGet<{ devices?: Array<{ id?: string | null; is_active?: boolean | null }> }>(
+        token,
+        '/me/player/devices'
+      )
+      const active = (devicesRes.devices || []).find((d) => d.is_active && d.id)
+      if (active?.id) return active.id
+
+      if (window.electron?.librespotAuth) {
+        await window.electron.librespotAuth(token)
+      }
+
+      await librespotController.init()
+
+      const startTime = Date.now()
+      let deviceId: string | null = null
+      while (Date.now() - startTime < 12000) {
+        deviceId = await librespotController.refreshDeviceId()
+        if (deviceId) break
+        await new Promise((r) => setTimeout(r, 500))
+      }
+      if (!deviceId) return null
+
+      librespotController.setPreferred(true)
+      await apiCall(token, { method: 'PUT', path: '/me/player', body: { device_ids: [deviceId], play: false } })
+      return deviceId
+    } catch {
+      return null
+    }
+  }
+
   const doSafeLogout = (message?: string) =>
     safeLogout(
-      { store: storeLike, stopPlaybackPolling, webPlaybackDisconnect: () => webPlayback.disconnect() },
+      { store: storeLike, stopPlaybackPolling, webPlaybackDisconnect: () => librespotController.disconnect() },
       message
     )
 
@@ -176,6 +198,7 @@ function createSpotifyStore() {
     stopAuthListener =
       window.electron?.onSpotifyAuth?.((tokens) => {
         persistTokens(storeLike, tokens)
+        void ensureLibrespotIsActive(tokens.accessToken)
         void fetchAll()
         polling.start()
       }) ?? null
@@ -189,12 +212,18 @@ function createSpotifyStore() {
   return {
     subscribe,
 
-    getWebPlaybackDeviceId() {
-      return webPlayback.getDeviceId()
+    getLibrespotDeviceId() {
+      return librespotController.getDeviceId()
+    },
+
+    async initLibrespot() {
+      await librespotController.init()
     },
 
     init() {
       attachAuthListeners()
+
+      void librespotController.init()
 
       const sess = loadPersistedSession(storeLike)
       if (!sess.accessToken) return
@@ -211,6 +240,7 @@ function createSpotifyStore() {
         try {
           const token = await ensureFreshToken()
           if (!token) return
+          void ensureLibrespotIsActive(token)
           await fetchAll()
           polling.start()
         } catch (e) {
@@ -412,8 +442,19 @@ function createSpotifyStore() {
       await (this as any).playUris(mix.uris)
     },
 
-    async ensureWebPlaybackReady() {
-      return await webPlayback.ensureReady()
+    async ensureLibrespotReady() {
+      await librespotController.init()
+      const deviceId = await librespotController.refreshDeviceId()
+
+      if (deviceId) {
+        const token = await ensureFreshToken()
+        if (token) {
+          await apiCall(token, { method: 'PUT', path: '/me/player', body: { device_ids: [deviceId], play: false } })
+        }
+        librespotController.setPreferred(true)
+      }
+
+      return { deviceId, status: librespotController.getStatus() }
     },
 
     async refreshPlayback() {
@@ -429,7 +470,7 @@ function createSpotifyStore() {
       const token = await ensureFreshToken()
       if (!token) return
 
-      const deviceId = webPlayback.getDeviceId()
+      const deviceId = librespotController.getDeviceId()
       const qs = new URLSearchParams({ uri: track.uri })
       if (deviceId) qs.set('device_id', deviceId)
       await apiCall(token, { method: 'POST', path: `/me/player/queue?${qs.toString()}` })
@@ -438,7 +479,7 @@ function createSpotifyStore() {
     async enqueueUri(uri: string) {
       const token = await ensureFreshToken()
       if (!token) return
-      const deviceId = webPlayback.getDeviceId()
+      const deviceId = librespotController.getDeviceId()
       const qs = new URLSearchParams({ uri })
       if (deviceId) qs.set('device_id', deviceId)
       await apiCall(token, { method: 'POST', path: `/me/player/queue?${qs.toString()}` })

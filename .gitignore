@@ -8,3 +8,5 @@ release/
 .DS_Store
 Thumbs.db
 bun.lock
+resources/librespot/librespot.exe
+resources/librespot/librespot

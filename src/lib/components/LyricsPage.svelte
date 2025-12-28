@@ -15,11 +15,11 @@
   let activeIndex = -1
 
   let activeDeviceId: string | null = null
-  let webPlaybackDeviceId: string | null = null
+  let librespotDeviceId: string | null = null
 
   async function refreshActiveDevice() {
     try {
-      webPlaybackDeviceId = spotifyStore.getWebPlaybackDeviceId?.() ?? null
+      librespotDeviceId = spotifyStore.getLibrespotDeviceId?.() ?? null
       const devices = await spotifyStore.getDevices()
       activeDeviceId = (devices || []).find((d) => d.is_active && d.id)?.id ?? null
     } catch {
@@ -83,7 +83,7 @@
   $: basePositionMs =
     $playerStore.currentTrack ? ($playerStore.progress / 100) * $playerStore.currentTrack.duration : 0
 
-  $: isInAppPlayback = !!(activeDeviceId && webPlaybackDeviceId && activeDeviceId === webPlaybackDeviceId)
+  $: isInAppPlayback = !!(activeDeviceId && librespotDeviceId && activeDeviceId === librespotDeviceId)
   $: connectCompMs = !$playerStore.isPlaying ? 0 : isInAppPlayback ? 0 : 80
   $: positionMs = Math.max(0, basePositionMs + connectCompMs)
 

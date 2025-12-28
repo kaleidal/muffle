@@ -3,10 +3,11 @@ import { playerStore } from '../../playerStore'
 import { apiCall, apiGet } from '../api'
 import type { SpotifyDevice, SpotifyDevicesResponse } from '../types'
 
-type WebPlaybackLike = {
+type LibrespotControllerLike = {
   getDeviceId: () => string | null
   getPreferredDeviceId: () => string | null
   setPreferred: (isPreferred: boolean) => void
+  refreshDeviceId?: () => Promise<string | null>
   trySeek: (positionMs: number) => Promise<boolean>
 }
 
@@ -14,7 +15,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 export function createPlayerCommands(args: {
   ensureFreshToken: () => Promise<string | null>
-  webPlayback: WebPlaybackLike
+  librespotController: LibrespotControllerLike
   refreshPlayback: () => Promise<void>
 }) {
   const getActiveDeviceId = async (token: string): Promise<string | null> => {
@@ -32,8 +33,15 @@ export function createPlayerCommands(args: {
     const active = (devices.devices || []).find((d) => d.is_active && d.id)
     if (active?.id) return active.id
 
-    const webPreferred = args.webPlayback.getPreferredDeviceId()
-    if (webPreferred) return webPreferred
+    const muffleId =
+      args.librespotController.getDeviceId() ??
+      (args.librespotController.refreshDeviceId ? await args.librespotController.refreshDeviceId() : null) ??
+      (devices.devices || []).find((d) => d.id && (d.name === 'Muffle' || d.name?.toLowerCase().includes('muffle')))?.id ??
+      null
+    if (muffleId) return muffleId
+
+    const librespotPreferred = args.librespotController.getPreferredDeviceId()
+    if (librespotPreferred) return librespotPreferred
 
     const any = (devices.devices || []).find((d) => d.id)
     return any?.id ?? null
@@ -67,6 +75,8 @@ export function createPlayerCommands(args: {
         if (!target) throw e
 
         await apiCall(token, { method: 'PUT', path: '/me/player', body: { device_ids: [target], play: false } })
+        const librespotId = args.librespotController.getDeviceId()
+        args.librespotController.setPreferred(Boolean(librespotId && target === librespotId))
         await sleep(200)
         await attempt()
         return
@@ -83,9 +93,9 @@ export function createPlayerCommands(args: {
     const res = await apiGet<SpotifyDevicesResponse>(token, '/me/player/devices')
     const devices = res.devices || []
 
-    const webId = args.webPlayback.getDeviceId()
-    if (webId && !devices.some((d) => d.id === webId)) {
-      devices.unshift({ id: webId, name: 'Muffle', type: 'Computer', is_active: false })
+    const librespotId = args.librespotController.getDeviceId()
+    if (librespotId && !devices.some((d) => d.id === librespotId)) {
+      devices.unshift({ id: librespotId, name: 'Muffle', type: 'Computer', is_active: false })
     }
 
     return devices
@@ -97,8 +107,8 @@ export function createPlayerCommands(args: {
 
     await apiCall(token, { method: 'PUT', path: '/me/player', body: { device_ids: [deviceId], play } })
 
-    const webId = args.webPlayback.getDeviceId()
-    if (webId && deviceId === webId) args.webPlayback.setPreferred(true)
+    const librespotId = args.librespotController.getDeviceId()
+    if (librespotId && deviceId === librespotId) args.librespotController.setPreferred(true)
 
     void args.refreshPlayback()
   }
@@ -113,12 +123,6 @@ export function createPlayerCommands(args: {
     const positionMs = Math.max(0, Math.min(state.currentTrack.duration, Math.floor((pct / 100) * state.currentTrack.duration)))
     playerStore.seek(pct)
 
-    const usedSdk = await args.webPlayback.trySeek(positionMs).catch(() => false)
-    if (usedSdk) {
-      void args.refreshPlayback()
-      return
-    }
-
     const activeDeviceId = await getActiveDeviceId(token)
     const qs = activeDeviceId ? `&device_id=${encodeURIComponent(activeDeviceId)}` : ''
     await apiCall(token, { method: 'PUT', path: `/me/player/seek?position_ms=${positionMs}${qs}` })
@@ -127,26 +131,58 @@ export function createPlayerCommands(args: {
   }
 
   const play = async () => {
-    const token = await args.ensureFreshToken()
-    if (!token) return
+    const prev = get(playerStore)
+    if (!prev.isPlaying) playerStore.setOptimisticIsPlaying(true)
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const token = await args.ensureFreshToken()
+    if (!token) {
+      playerStore.clearOptimisticIsPlaying()
+      if (prev.isPlaying) playerStore.play()
+      else playerStore.pause()
+      return
+    }
+
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
-    await runPlayerCommand(token, { method: 'PUT', path: `/me/player/play${qs}` })
-    playerStore.setIsPlaying(true)
+    try {
+      await runPlayerCommand(token, { method: 'PUT', path: `/me/player/play${qs}` })
+    } catch (e) {
+      playerStore.clearOptimisticIsPlaying()
+      if (prev.isPlaying) playerStore.play()
+      else playerStore.pause()
+      void args.refreshPlayback()
+      throw e
+    }
+
     void args.refreshPlayback()
   }
 
   const pause = async () => {
-    const token = await args.ensureFreshToken()
-    if (!token) return
+    const prev = get(playerStore)
+    if (prev.isPlaying) playerStore.setOptimisticIsPlaying(false)
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const token = await args.ensureFreshToken()
+    if (!token) {
+      playerStore.clearOptimisticIsPlaying()
+      if (prev.isPlaying) playerStore.play()
+      else playerStore.pause()
+      return
+    }
+
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
-    await runPlayerCommand(token, { method: 'PUT', path: `/me/player/pause${qs}` })
-    playerStore.setIsPlaying(false)
+    try {
+      await runPlayerCommand(token, { method: 'PUT', path: `/me/player/pause${qs}` })
+    } catch (e) {
+      playerStore.clearOptimisticIsPlaying()
+      if (prev.isPlaying) playerStore.play()
+      else playerStore.pause()
+      void args.refreshPlayback()
+      throw e
+    }
+
     void args.refreshPlayback()
   }
 
@@ -154,7 +190,7 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken()
     if (!token) return
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, { method: 'POST', path: `/me/player/next${qs}` })
@@ -165,7 +201,7 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken()
     if (!token) return
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, { method: 'POST', path: `/me/player/previous${qs}` })
@@ -176,11 +212,10 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken()
     if (!token) return
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, { method: 'PUT', path: `/me/player/play${qs}`, body: { uris: [uri] } })
-    playerStore.setIsPlaying(true)
     void args.refreshPlayback()
   }
 
@@ -188,7 +223,7 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken()
     if (!token) return
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, {
@@ -200,8 +235,6 @@ export function createPlayerCommands(args: {
         position_ms: 0
       }
     })
-
-    playerStore.setIsPlaying(true)
     void args.refreshPlayback()
   }
 
@@ -209,7 +242,7 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken()
     if (!token) return
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, {
@@ -217,8 +250,6 @@ export function createPlayerCommands(args: {
       path: `/me/player/play${qs}`,
       body: { context_uri: contextUri, position_ms: 0 }
     })
-
-    playerStore.setIsPlaying(true)
     void args.refreshPlayback()
   }
 
@@ -229,7 +260,7 @@ export function createPlayerCommands(args: {
     const clean = (uris || []).filter(Boolean)
     if (!clean.length) return
 
-    const preferred = args.webPlayback.getPreferredDeviceId()
+    const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, {
@@ -237,8 +268,6 @@ export function createPlayerCommands(args: {
       path: `/me/player/play${qs}`,
       body: { uris: clean }
     })
-
-    playerStore.setIsPlaying(true)
     void args.refreshPlayback()
   }
 
@@ -246,10 +275,7 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken()
     if (!token) return
 
-    const activeDeviceId = await getActiveDeviceId(token)
-    const device = activeDeviceId ? `&device_id=${encodeURIComponent(activeDeviceId)}` : ''
-
-    await apiCall(token, { method: 'PUT', path: `/me/player/shuffle?state=${enabled ? 'true' : 'false'}${device}` })
+    await runPlayerCommand(token, { method: 'PUT', path: `/me/player/shuffle?state=${enabled ? 'true' : 'false'}` })
 
     playerStore.setShuffle(enabled)
     void args.refreshPlayback()

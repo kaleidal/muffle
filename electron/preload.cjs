@@ -17,5 +17,13 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = (_e, err) => callback(err)
     ipcRenderer.on('spotify:auth-error', handler)
     return () => ipcRenderer.off('spotify:auth-error', handler)
+  },
+  librespotStatus: () => ipcRenderer.invoke('librespot:status'),
+  librespotRestart: () => ipcRenderer.invoke('librespot:restart'),
+  librespotAuth: (accessToken) => ipcRenderer.invoke('librespot:auth', accessToken),
+  onLibrespotReady: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('librespot:ready', handler)
+    return () => ipcRenderer.off('librespot:ready', handler)
   }
 })

@@ -1,16 +1,115 @@
-const { app, BrowserWindow, ipcMain, shell, session, components } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, session } = require('electron')
+const { spawn } = require('child_process')
 const crypto = require('crypto')
 const http = require('http')
 const path = require('path')
+const fs = require('fs')
 
-const shouldEnableDrm =
-  process.env.MUFFLE_ENABLE_DRM === '1' ||
-  process.env.NODE_ENV === 'production' ||
-  app.isPackaged
+let librespotProc = null
+let librespotReady = false
+let librespotStarting = false
 
-if (shouldEnableDrm) {
-  app.commandLine.appendSwitch('enable-widevine-cdm')
-  app.commandLine.appendSwitch('no-verify-widevine-cdm')
+function getLibrespotPath() {
+  const isPackaged = app.isPackaged
+  const platform = process.platform
+  const binaryName = platform === 'win32' ? 'librespot.exe' : 'librespot'
+  
+  if (isPackaged) {
+    return path.join(process.resourcesPath, 'librespot', binaryName)
+  }
+  return path.join(__dirname, '..', 'resources', 'librespot', binaryName)
+}
+
+function librespotExists() {
+  const binPath = getLibrespotPath()
+  return fs.existsSync(binPath)
+}
+
+function startLibrespot(accessToken) {
+  if (librespotProc || librespotStarting) return
+  
+  const binPath = getLibrespotPath()
+  if (!fs.existsSync(binPath)) {
+    console.warn('librespot binary not found at:', binPath)
+    console.warn('Muffle will work in Connect-only mode (control external devices)')
+    return
+  }
+  
+  librespotStarting = true
+  console.log('Starting librespot from:', binPath)
+
+  const systemCacheDir = path.join(app.getPath('userData'), 'librespot')
+  try {
+    fs.mkdirSync(systemCacheDir, { recursive: true })
+  } catch {
+  }
+  
+  const args = [
+    '--name', 'Muffle',
+    '--backend', 'rodio',
+    '--bitrate', '320',
+    '--device-type', 'computer',
+    '--system-cache', systemCacheDir,
+    '--disable-audio-cache',
+    '--enable-volume-normalisation',
+    '--initial-volume', '80'
+  ]
+
+  if (accessToken) {
+    args.push('--access-token', String(accessToken))
+  }
+  
+  librespotProc = spawn(binPath, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
+  })
+  
+  librespotProc.stdout.on('data', (data) => {
+    const output = data.toString()
+    console.log('[librespot]', output)
+    if (output.includes('Authenticated') || output.includes('authenticated')) {
+      librespotReady = true
+      if (mainWindow) {
+        mainWindow.webContents.send('librespot:ready')
+      }
+    }
+  })
+  
+  librespotProc.stderr.on('data', (data) => {
+    const output = data.toString()
+    console.log('[librespot:err]', output)
+    if (output.includes('Authenticated') || output.includes('authenticated')) {
+      librespotReady = true
+      if (mainWindow) {
+        mainWindow.webContents.send('librespot:ready')
+      }
+    }
+  })
+  
+  librespotProc.on('error', (err) => {
+    console.error('Failed to start librespot:', err)
+    librespotProc = null
+    librespotReady = false
+    librespotStarting = false
+  })
+  
+  librespotProc.on('exit', (code, signal) => {
+    console.log('librespot exited with code:', code, 'signal:', signal)
+    librespotProc = null
+    librespotReady = false
+    librespotStarting = false
+  })
+  
+  librespotStarting = false
+}
+
+function stopLibrespot() {
+  if (librespotProc) {
+    console.log('Stopping librespot...')
+    librespotProc.kill('SIGTERM')
+    librespotProc = null
+    librespotReady = false
+  }
 }
 
 let mainWindow = null
@@ -259,16 +358,13 @@ app.whenReady().then(async () => {
   const isDev = !app.isPackaged
   const devOrigin = 'http://localhost:5173'
 
-  if (shouldEnableDrm) {
-    await components.whenReady()
-    console.log('components ready:', components.status())
-  }
+  startLibrespot()
 
   const csp = [
     isDev ? `default-src 'self' ${devOrigin}` : "default-src 'self'",
     isDev
-      ? `script-src 'self' 'unsafe-eval' 'unsafe-inline' ${devOrigin} https://sdk.scdn.co`
-      : "script-src 'self' 'unsafe-inline' https://sdk.scdn.co",
+      ? `script-src 'self' 'unsafe-eval' 'unsafe-inline' ${devOrigin}`
+      : "script-src 'self' 'unsafe-inline'",
     isDev
       ? "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com https://lrclib.net http://127.0.0.1:5174 ws://localhost:5173 http://localhost:5173"
       : "connect-src 'self' https://*.spotify.com https://*.scdn.co https://*.spotifycdn.com wss://*.spotify.com https://api.spotify.com https://accounts.spotify.com https://lrclib.net http://127.0.0.1:5174",
@@ -281,7 +377,7 @@ app.whenReady().then(async () => {
       : "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "media-src 'self' blob: https: https://*.spotifycdn.com",
-    "frame-src https://accounts.spotify.com https://sdk.scdn.co",
+    "frame-src https://accounts.spotify.com",
   ].join('; ')
 
   if (!isDev) {
@@ -300,7 +396,12 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  stopLibrespot()
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  stopLibrespot()
 })
 
 ipcMain.handle('window:minimize', () => {
@@ -339,4 +440,23 @@ ipcMain.handle('spotify:refresh', async (_event, args) => {
     }
     return { accessToken: '', expiresIn: 0, error: message }
   }
+})
+
+ipcMain.handle('librespot:status', () => {
+  return {
+    running: !!librespotProc,
+    ready: librespotReady,
+    available: librespotExists()
+  }
+})
+
+ipcMain.handle('librespot:restart', () => {
+  stopLibrespot()
+  setTimeout(() => startLibrespot(), 500)
+})
+
+ipcMain.handle('librespot:auth', (_event, accessToken) => {
+  stopLibrespot()
+  setTimeout(() => startLibrespot(accessToken), 250)
+  return { ok: true }
 })

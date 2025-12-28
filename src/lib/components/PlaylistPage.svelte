@@ -1,7 +1,9 @@
 <script lang="ts">
   import { fly, fade } from 'svelte/transition'
   import { onDestroy, onMount } from 'svelte'
+  import { get } from 'svelte/store'
   import { spotifyStore } from '../stores/spotify'
+  import { playerStore } from '../stores/playerStore'
   import { bestImageUrl } from '../utils/spotifyImages'
 
   export let playlistId: string
@@ -109,13 +111,12 @@
     await playAt(0)
   }
 
-  async function shufflePlayPlaylist() {
-    if (!data) return
+  async function toggleShuffle() {
     try {
-      await spotifyStore.setShuffle(true)
-      await playAt(0)
+      const next = !get(playerStore).shuffle
+      await spotifyStore.setShuffle(next)
     } catch (e) {
-      console.error('Shuffle play failed:', e)
+      console.error('Shuffle toggle failed:', e)
     }
   }
 
@@ -168,16 +169,14 @@
 
           <button
             class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center bouncy-btn shrink-0"
-            onclick={shufflePlayPlaylist}
-            aria-label="Shuffle and play"
-            title="Shuffle"
+            onclick={toggleShuffle}
+            aria-label={$playerStore.shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+            aria-pressed={$playerStore.shuffle}
+            title={$playerStore.shuffle ? 'Shuffle: on' : 'Shuffle: off'}
           >
-            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M16 3h5v5h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H16V3z" />
-              <path d="M4 6h4.59l8.7 8.7-1.41 1.41L7.76 8H4V6z" />
-              <path d="M4 16h4.59l2.29-2.29 1.41 1.41L9.41 18H4v-2z" />
-              <path d="M16 16h1.59l-2.3-2.29 1.42-1.41L19 14.59V13h2v5h-5v-2z" />
-            </svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class={`${$playerStore.shuffle ? 'text-white' : 'text-white/35'}`}>
+                <path d="M18 14L22 18M22 18L18 22M22 18H15.959C15.3036 17.9933 14.6598 17.8257 14.0844 17.5118C13.509 17.1979 13.0195 16.7474 12.659 16.2L12.3 15.75M18 2L22 6M22 6L18 10M22 6L16.027 6C15.3805 5.99558 14.7426 6.14794 14.1679 6.44401C13.5931 6.74008 13.0987 7.17105 12.727 7.7L7.273 16.3C6.90127 16.829 6.40687 17.2599 5.83215 17.556C5.25742 17.8521 4.61949 18.0044 3.973 18H2M2 6H3.972C4.71746 5.99481 5.44954 6.19805 6.08564 6.58678C6.72174 6.9755 7.23655 7.53426 7.572 8.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
           </button>
         </div>
         <p class="text-white/50 text-sm font-semibold mt-2 truncate">{playlistId === 'liked' ? 'Saved tracks' : data.ownerName}</p>

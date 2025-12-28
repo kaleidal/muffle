@@ -64,6 +64,7 @@ function createPlayerStore() {
   let lastTickAt = 0
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   let lastPeekTrackId: string | null = null
+  let optimisticIsPlaying: null | { value: boolean; until: number } = null
 
   const stopTicking = () => {
     if (progressInterval) {
@@ -147,6 +148,39 @@ function createPlayerStore() {
   const api = {
     subscribe,
 
+    setOptimisticIsPlaying(isPlaying: boolean, ttlMs = 3500) {
+      const until = Date.now() + Math.max(0, ttlMs | 0)
+      optimisticIsPlaying = ttlMs > 0 ? { value: !!isPlaying, until } : null
+
+      if (isPlaying) startTicking()
+      else stopTicking()
+
+      update((state) => ({ ...state, isPlaying: !!isPlaying }))
+    },
+
+    clearOptimisticIsPlaying() {
+      optimisticIsPlaying = null
+    },
+
+    setOptimisticTrack(track: Track) {
+      if (!track) return
+      optimisticIsPlaying = null
+      stopTicking()
+
+      update((state) => ({
+        ...state,
+        currentTrack: track,
+        progress: 0,
+        isPlaying: false,
+        showNextPreview: false,
+        peekLatched: false
+      }))
+
+      lastTickAt = Date.now()
+      lastPeekTrackId = null
+      setTransitioning()
+    },
+
     toggleExpanded() {
       update((state) => ({ ...state, expanded: !state.expanded }))
     },
@@ -164,6 +198,19 @@ function createPlayerStore() {
     }) {
       let changedTrack = false
       let toastTrack: Track | null = null
+
+      const now = Date.now()
+      let effectiveIsPlaying = !!args.isPlaying
+      if (optimisticIsPlaying) {
+        if (now >= optimisticIsPlaying.until) {
+          optimisticIsPlaying = null
+        } else if (effectiveIsPlaying === optimisticIsPlaying.value) {
+          optimisticIsPlaying = null
+        } else {
+          effectiveIsPlaying = optimisticIsPlaying.value
+        }
+      }
+
       update((state) => {
         const prevId = state.currentTrack?.id ?? null
         const nextId = args.current?.id ?? null
@@ -201,7 +248,7 @@ function createPlayerStore() {
                 ? state.queue
                 : args.queue
               : state.queue,
-          isPlaying: args.isPlaying,
+          isPlaying: effectiveIsPlaying,
           progress: clamp(args.progressPct, 0, 100),
           showNextPreview,
           peekLatched
@@ -210,7 +257,7 @@ function createPlayerStore() {
 
       lastTickAt = Date.now()
 
-      if (args.isPlaying) startTicking()
+      if (effectiveIsPlaying) startTicking()
       else stopTicking()
 
       if (toastTrack) showNowPlayingToast(toastTrack)
