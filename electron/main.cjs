@@ -201,9 +201,11 @@ async function refreshSpotifyToken(args) {
     throw new Error(json?.error_description || json?.error || 'Spotify token refresh failed')
   }
 
+  const hasRefreshToken = Object.prototype.hasOwnProperty.call(json || {}, 'refresh_token')
   return {
     accessToken: json.access_token,
-    expiresIn: json.expires_in
+    expiresIn: json.expires_in,
+    ...(hasRefreshToken ? { refreshToken: json.refresh_token ?? null } : {})
   }
 }
 
@@ -438,7 +440,7 @@ ipcMain.handle('spotify:refresh', async (_event, args) => {
     if (mainWindow) {
       mainWindow.webContents.send('spotify:auth-error', { message })
     }
-    return { accessToken: '', expiresIn: 0, error: message }
+    throw new Error(message)
   }
 })
 

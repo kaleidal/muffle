@@ -19,16 +19,19 @@ export function clearPersisted() {
   localStorage.removeItem(STORAGE_KEYS.expiresAt)
 }
 
-export function persistTokens(store: StoreLike, args: { accessToken: string; refreshToken: string | null; expiresIn: number }) {
+export function persistTokens(store: StoreLike, args: { accessToken: string; refreshToken?: string | null; expiresIn: number }) {
   const expiresAt = Date.now() + args.expiresIn * 1000
   localStorage.setItem(STORAGE_KEYS.accessToken, args.accessToken)
   localStorage.setItem(STORAGE_KEYS.expiresAt, String(expiresAt))
-  if (args.refreshToken) localStorage.setItem(STORAGE_KEYS.refreshToken, args.refreshToken)
+  if (args.refreshToken !== undefined) {
+    if (args.refreshToken) localStorage.setItem(STORAGE_KEYS.refreshToken, args.refreshToken)
+    else localStorage.removeItem(STORAGE_KEYS.refreshToken)
+  }
 
   store.update((s) => ({
     ...s,
     accessToken: args.accessToken,
-    refreshToken: args.refreshToken ?? s.refreshToken,
+    refreshToken: args.refreshToken !== undefined ? args.refreshToken : s.refreshToken,
     expiresAt
   }))
 }
@@ -85,7 +88,12 @@ export function ensureFreshTokenFactory(deps: Deps) {
 
     try {
       const refreshed = await window.electron.spotifyRefresh({ clientId, refreshToken })
-      persistTokens(deps.store, { accessToken: refreshed.accessToken, refreshToken, expiresIn: refreshed.expiresIn })
+      if (!refreshed?.accessToken) throw new Error('Spotify token refresh failed')
+      persistTokens(deps.store, {
+        accessToken: refreshed.accessToken,
+        refreshToken: 'refreshToken' in refreshed ? (refreshed as any).refreshToken : undefined,
+        expiresIn: refreshed.expiresIn
+      })
       return refreshed.accessToken
     } catch (e: any) {
       const msg = String(e?.message || e || '')

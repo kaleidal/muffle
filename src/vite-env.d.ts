@@ -9,7 +9,7 @@ declare global {
       openSpotifyAuth: (url: string) => Promise<void>
 
       spotifyLogin: (args: { clientId: string; scopes: string[] }) => Promise<{ redirectUri: string }>
-      spotifyRefresh: (args: { clientId: string; refreshToken: string }) => Promise<{ accessToken: string; expiresIn: number }>
+      spotifyRefresh: (args: { clientId: string; refreshToken: string }) => Promise<{ accessToken: string; expiresIn: number; refreshToken?: string | null }>
       onSpotifyAuth: (
         callback: (tokens: { accessToken: string; refreshToken: string | null; expiresIn: number }) => void
       ) => () => void

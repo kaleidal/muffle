@@ -1,23 +1,11 @@
 {
   "name": "muffle",
   "version": "0.0.0",
-  "description": "A beautiful, fluid Spotify desktop client",
-  "main": "electron/main.cjs",
-  "homepage": "https://muffle.kaleid.al",
   "author": {
     "name": "Kaleidal",
     "email": "hello@kaleid.al"
   },
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build && electron-builder",
-    "preview": "vite preview",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && electron-builder"
-  },
-  "type": "module",
-  "keywords": ["spotify", "music", "electron", "svelte"],
-  "license": "MIT",
+  "main": "electron/main.cjs",
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tailwindcss/vite": "^4.0.0",
@@ -35,9 +23,6 @@
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^0.14.6",
     "wait-on": "^8.0.1"
-  },
-  "dependencies": {
-    "motion": "^12.0.0"
   },
   "build": {
     "appId": "al.kaleid.muffle",
@@ -75,7 +60,19 @@
       "icon": "public/icon.png"
     }
   },
+  "description": "A beautiful, fluid Spotify desktop client",
+  "homepage": "https://muffle.kaleid.al",
+  "keywords": ["spotify", "music", "electron", "svelte"],
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && electron-builder",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder"
+  },
   "trustedDependencies": [
     "electron"
-  ]
+  ],
+  "type": "module"
 }
