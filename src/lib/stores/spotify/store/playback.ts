@@ -4,6 +4,22 @@ import { apiGet } from '../api'
 import { mapToTrack } from '../mappers'
 import type { SpotifyCurrentlyPlaying, SpotifyMePlayer, SpotifyQueue } from '../types'
 
+function sanitizeQueue(args: { currentTrackId: string | null; incoming: NonNullable<SpotifyQueue['queue']> }) {
+  const mapped = (args.incoming || []).map(mapToTrack).filter((t) => t?.id && t?.uri)
+
+  const withoutCurrent = args.currentTrackId ? mapped.filter((t) => t.id !== args.currentTrackId) : mapped
+
+  const collapsed: typeof withoutCurrent = []
+  for (const t of withoutCurrent) {
+    const prev = collapsed[collapsed.length - 1]
+    if (prev && prev.id === t.id) continue
+    collapsed.push(t)
+    if (collapsed.length >= 20) break
+  }
+
+  return collapsed
+}
+
 export function fetchPlaybackOnceFactory(args: { updateCurrent: (current: SpotifyCurrentlyPlaying) => void }) {
   return async function fetchPlaybackOnce(token: string) {
     const [currentRes, queueRes, playerRes] = await Promise.allSettled([
@@ -24,9 +40,8 @@ export function fetchPlaybackOnceFactory(args: { updateCurrent: (current: Spotif
     const prevPlayer = get(playerStore)
 
     const currentTrack = current?.item ? mapToTrack(current.item) : current?.is_playing ? prevPlayer.currentTrack : null
-    const nextItem = queue?.queue?.[0] ?? null
-    const nextTrack = nextItem ? mapToTrack(nextItem) : null
-    const queueTracks = (queue?.queue ?? []).slice(0, 20).map(mapToTrack)
+    const queueTracks = sanitizeQueue({ currentTrackId: currentTrack?.id ?? null, incoming: queue?.queue ?? [] })
+    const nextTrack = queueTracks[0] ?? null
 
     const progressPct =
       current?.item && current.item.duration_ms

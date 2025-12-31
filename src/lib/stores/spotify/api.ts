@@ -92,6 +92,24 @@ export async function apiCall(token: string, args: { method: 'PUT' | 'POST'; pat
   }
 }
 
+export async function apiCallJson<T>(token: string, args: { method: 'PUT' | 'POST'; path: string; body?: any }): Promise<T> {
+  const res = await spotifyFetch(`https://api.spotify.com/v1${args.path}`, {
+    method: args.method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(args.body ? { 'content-type': 'application/json' } : {})
+    },
+    body: args.body ? JSON.stringify(args.body) : undefined
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Spotify API error ${res.status} ${res.statusText} ${text}`)
+  }
+
+  return (await res.json()) as T
+}
+
 export function isInsufficientScopeError(err: unknown) {
   const msg = String((err as any)?.message || err || '')
   return /\bSpotify API error 403\b/i.test(msg) && /insufficient client scope/i.test(msg)

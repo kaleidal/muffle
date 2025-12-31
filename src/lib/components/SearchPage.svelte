@@ -3,6 +3,7 @@
   import { onDestroy, onMount } from 'svelte'
   import { spotifyStore } from '../stores/spotify'
   import { playerStore } from '../stores/playerStore'
+  import AddToPlaylistModal from './AddToPlaylistModal.svelte'
 
   export let query: string
 
@@ -29,6 +30,9 @@
         y: number
         track: SearchTrack
       } = null
+
+  let addOpen = false
+  let addTrack: SearchTrack | null = null
 
   const closeMenu = () => {
     menu = null
@@ -96,6 +100,13 @@
     e.stopPropagation()
     menu = { x: e.clientX, y: e.clientY, track: t }
   }
+
+  function openAddModal(e: MouseEvent, t: SearchTrack) {
+    e.preventDefault()
+    e.stopPropagation()
+    addTrack = t
+    addOpen = true
+  }
 </script>
 
 <div
@@ -116,11 +127,17 @@
     {:else if results.length}
       <div class="flex flex-col">
         {#each results as t, i (`${t.uri}-${i}`)}
-          <button
+          <div
             class="px-4 py-3 rounded-3xl hover:bg-white/5 transition-colors flex items-center gap-4 text-left"
-            onclick={() => playTrack(t)}
-            oncontextmenu={(e) => openTrackMenu(e, t)}
+            role="button"
+            tabindex="0"
             aria-label={`Play ${t.name}`}
+            onclick={() => playTrack(t)}
+            onkeydown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              void playTrack(t)
+            }}
+            oncontextmenu={(e) => openTrackMenu(e, t)}
           >
             <div class="w-12 h-12 rounded-2xl overflow-hidden bg-white/5 shrink-0">
               {#if t.albumArt}
@@ -134,7 +151,23 @@
             </div>
 
             <div class="text-white/40 text-sm font-semibold tabular-nums shrink-0">{formatTime(t.duration)}</div>
-          </button>
+
+            <button
+              class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center bouncy-btn shrink-0"
+              aria-label="Add to playlist"
+              onclick={(e) => openAddModal(e, t)}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M8 12H16M12 8V16M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"
+                  stroke="white"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         {/each}
       </div>
     {:else if query.trim().length}
@@ -187,6 +220,15 @@
       </div>
     </div>
   {/if}
+
+  <AddToPlaylistModal
+    open={addOpen}
+    track={addTrack}
+    onClose={() => {
+      addOpen = false
+      addTrack = null
+    }}
+  />
 </div>
 
 <style>

@@ -8,6 +8,8 @@ const fs = require('fs')
 let librespotProc = null
 let librespotReady = false
 let librespotStarting = false
+let librespotAuthToken = null
+let pendingLibrespotAuthToken = null
 
 function getLibrespotPath() {
   const isPackaged = app.isPackaged
@@ -69,6 +71,7 @@ function startLibrespot(accessToken) {
     console.log('[librespot]', output)
     if (output.includes('Authenticated') || output.includes('authenticated')) {
       librespotReady = true
+      librespotStarting = false
       if (mainWindow) {
         mainWindow.webContents.send('librespot:ready')
       }
@@ -80,6 +83,7 @@ function startLibrespot(accessToken) {
     console.log('[librespot:err]', output)
     if (output.includes('Authenticated') || output.includes('authenticated')) {
       librespotReady = true
+      librespotStarting = false
       if (mainWindow) {
         mainWindow.webContents.send('librespot:ready')
       }
@@ -98,9 +102,14 @@ function startLibrespot(accessToken) {
     librespotProc = null
     librespotReady = false
     librespotStarting = false
+
+    if (pendingLibrespotAuthToken) {
+      const tok = pendingLibrespotAuthToken
+      pendingLibrespotAuthToken = null
+      librespotAuthToken = tok
+      setTimeout(() => startLibrespot(tok), 250)
+    }
   })
-  
-  librespotStarting = false
 }
 
 function stopLibrespot() {
@@ -458,7 +467,29 @@ ipcMain.handle('librespot:restart', () => {
 })
 
 ipcMain.handle('librespot:auth', (_event, accessToken) => {
-  stopLibrespot()
-  setTimeout(() => startLibrespot(accessToken), 250)
+  const tokenStr = accessToken ? String(accessToken) : null
+
+  if (!librespotExists()) {
+    return { ok: false, skipped: true, reason: 'not-found' }
+  }
+
+  if (tokenStr && librespotProc && librespotAuthToken === tokenStr) {
+    return { ok: true, skipped: true }
+  }
+
+  if (librespotStarting) {
+    pendingLibrespotAuthToken = tokenStr
+    return { ok: true, queued: true }
+  }
+
+  librespotAuthToken = tokenStr
+
+  if (librespotProc) {
+    pendingLibrespotAuthToken = tokenStr
+    stopLibrespot()
+    return { ok: true, queued: true }
+  }
+
+  startLibrespot(tokenStr)
   return { ok: true }
 })

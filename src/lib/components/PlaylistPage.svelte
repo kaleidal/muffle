@@ -5,6 +5,7 @@
   import { spotifyStore } from '../stores/spotify'
   import { playerStore } from '../stores/playerStore'
   import { bestImageUrl } from '../utils/spotifyImages'
+  import TextPromptModal from './TextPromptModal.svelte'
 
   export let playlistId: string
 
@@ -24,12 +25,19 @@
     ownerName: string
     image: string
     uri: string
+    snapshotId: string | null
     tracks: PlaylistTrack[]
   }
 
   let loading = true
   let error: string | null = null
   let data: PlaylistView | null = null
+
+  let coverInput: HTMLInputElement | null = null
+  let busy = false
+
+  let renameOpen = false
+  let renameError: string | null = null
 
   let menu:
     | null
@@ -76,6 +84,7 @@
         ownerName: res.ownerName,
         image: bestImageUrl(res.images),
         uri: res.uri,
+        snapshotId: (res as any).snapshotId ?? null,
         tracks: res.tracks
       }
     } catch (e: any) {
@@ -111,6 +120,91 @@
   async function playPlaylist() {
     if (!data) return
     await playAt(0)
+  }
+
+  async function doRename() {
+    if (!data || playlistId === 'liked') return
+    renameError = null
+    renameOpen = true
+  }
+
+  const closeRename = () => {
+    if (busy) return
+    renameOpen = false
+    renameError = null
+  }
+
+  const confirmRename = async (name: string) => {
+    if (!data || playlistId === 'liked') return
+    const trimmed = name.trim()
+    if (!trimmed) {
+      renameError = 'Name is required'
+      return
+    }
+
+    busy = true
+    renameError = null
+    try {
+      await spotifyStore.renamePlaylist(data.id, trimmed)
+      await load()
+      closeRename()
+    } catch (e: any) {
+      renameError = e?.message || 'Rename playlist failed'
+    } finally {
+      busy = false
+    }
+  }
+
+  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
+  }
+
+  async function onCoverSelected(file: File | null) {
+    if (!file || !data || playlistId === 'liked') return
+    if (file.type !== 'image/jpeg') {
+      console.error('Cover must be a JPEG image')
+      return
+    }
+
+    busy = true
+    try {
+      const buf = await file.arrayBuffer()
+      const jpegBase64 = arrayBufferToBase64(buf)
+      await spotifyStore.setPlaylistCoverJpegBase64(data.id, jpegBase64)
+      await load()
+    } catch (e) {
+      console.error('Set playlist cover failed:', e)
+    } finally {
+      busy = false
+      if (coverInput) coverInput.value = ''
+    }
+  }
+
+  async function moveTrack(fromIndex: number, toIndex: number) {
+    if (!data || playlistId === 'liked') return
+    const from = fromIndex | 0
+    const to = toIndex | 0
+    if (from < 0 || to < 0 || from >= data.tracks.length || to >= data.tracks.length) return
+    if (from === to) return
+
+    const nextTracks = [...data.tracks]
+    const [moved] = nextTracks.splice(from, 1)
+    nextTracks.splice(to, 0, moved)
+    data = { ...data, tracks: nextTracks }
+
+    busy = true
+    try {
+      const nextSnapshot = await spotifyStore.reorderPlaylistTrack(data.id, from, to, data.snapshotId)
+      data = { ...data, snapshotId: nextSnapshot ?? data.snapshotId }
+    } catch (e) {
+      console.error('Reorder playlist track failed:', e)
+      await load()
+    } finally {
+      busy = false
+    }
   }
 
   async function toggleShuffle() {
@@ -157,6 +251,7 @@
           class="absolute -right-2 -bottom-2 w-11 h-11 rounded-full bg-(--accent-primary) flex items-center justify-center bouncy-btn shadow-lg"
           aria-label="Play"
           onclick={playPlaylist}
+          disabled={busy}
         >
           <svg class="w-6 h-6 text-black ml-0.5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
@@ -169,30 +264,84 @@
         <div class="flex items-center gap-4">
           <h2 class="text-white text-5xl font-extrabold tracking-tight leading-none truncate flex-1 min-w-0">{data.name}</h2>
 
-          <button
+          <div class="flex items-center gap-2">
+            <button
             class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center bouncy-btn shrink-0"
             onclick={toggleShuffle}
             aria-label={$playerStore.shuffle ? 'Disable shuffle' : 'Enable shuffle'}
             aria-pressed={$playerStore.shuffle}
             title={$playerStore.shuffle ? 'Shuffle: on' : 'Shuffle: off'}
+            disabled={busy}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class={`${$playerStore.shuffle ? 'text-white' : 'text-white/35'}`}>
                 <path d="M18 14L22 18M22 18L18 22M22 18H15.959C15.3036 17.9933 14.6598 17.8257 14.0844 17.5118C13.509 17.1979 13.0195 16.7474 12.659 16.2L12.3 15.75M18 2L22 6M22 6L18 10M22 6L16.027 6C15.3805 5.99558 14.7426 6.14794 14.1679 6.44401C13.5931 6.74008 13.0987 7.17105 12.727 7.7L7.273 16.3C6.90127 16.829 6.40687 17.2599 5.83215 17.556C5.25742 17.8521 4.61949 18.0044 3.973 18H2M2 6H3.972C4.71746 5.99481 5.44954 6.19805 6.08564 6.58678C6.72174 6.9755 7.23655 7.53426 7.572 8.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
           </button>
+
+          {#if playlistId !== 'liked'}
+            <button
+              class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center bouncy-btn shrink-0"
+              aria-label="Rename playlist"
+              onclick={doRename}
+              disabled={busy}
+              title="Rename"
+            >
+              <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.29a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+              </svg>
+            </button>
+
+            <button
+              class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center bouncy-btn shrink-0"
+              aria-label="Change cover"
+              onclick={() => coverInput?.click()}
+              disabled={busy}
+              title="Change cover (JPEG)"
+            >
+              <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 16l3.5-4.5L19 17H5l3.5-3.5z" />
+              </svg>
+            </button>
+          {/if}
+          </div>
         </div>
         <p class="text-white/50 text-sm font-semibold mt-2 truncate">{playlistId === 'liked' ? 'Saved tracks' : data.ownerName}</p>
       </div>
     </div>
 
+    <input
+      bind:this={coverInput}
+      type="file"
+      accept="image/jpeg"
+      class="hidden"
+      onchange={(e) => {
+        const files = (e.currentTarget as HTMLInputElement).files
+        void onCoverSelected(files && files.length ? files[0] : null)
+      }}
+    />
+
     <div class="mt-6 flex-1 min-h-0 overflow-y-auto scrollbar-hide">
       <div class="flex flex-col">
         {#each data.tracks as t, i (`${t.uri}-${i}`)}
-          <button
-            class="px-4 py-3 rounded-3xl hover:bg-white/5 transition-colors flex items-center gap-4 text-left group"
-            onclick={() => playAt(i)}
-            oncontextmenu={(e) => openTrackMenu(e, t)}
+          <div
+            class={`px-4 py-3 rounded-3xl hover:bg-white/5 transition-colors flex items-center gap-4 text-left group ${busy ? 'opacity-70 pointer-events-none' : ''}`}
+            role="button"
+            tabindex={busy ? -1 : 0}
+            aria-disabled={busy}
             aria-label={`Play ${t.name}`}
+            onclick={() => {
+              if (busy) return
+              void playAt(i)
+            }}
+            onkeydown={(e) => {
+              if (busy) return
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              void playAt(i)
+            }}
+            oncontextmenu={(e) => {
+              if (busy) return
+              openTrackMenu(e, t)
+            }}
           >
             <div class="w-10 text-white/40 text-sm font-semibold tabular-nums">{i + 1}</div>
 
@@ -208,7 +357,40 @@
             </div>
 
             <div class="text-white/40 text-sm font-semibold tabular-nums shrink-0">{formatTime(t.duration)}</div>
-          </button>
+
+            {#if playlistId !== 'liked'}
+              <div class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
+                  aria-label="Move up"
+                  onclick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void moveTrack(i, i - 1)
+                  }}
+                  disabled={busy || i === 0}
+                >
+                  <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M7.41 14.59 12 10l4.59 4.59L18 13.17l-6-6-6 6z" />
+                  </svg>
+                </button>
+                <button
+                  class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
+                  aria-label="Move down"
+                  onclick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void moveTrack(i, i + 1)
+                  }}
+                  disabled={busy || i === data.tracks.length - 1}
+                >
+                  <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M7.41 9.41 12 14l4.59-4.59L18 10.83l-6 6-6-6z" />
+                  </svg>
+                </button>
+              </div>
+            {/if}
+          </div>
         {/each}
 
         {#if data.tracks.length === 0}
@@ -262,6 +444,20 @@
     {/if}
   {/if}
 </div>
+
+{#if data && playlistId !== 'liked'}
+  <TextPromptModal
+    open={renameOpen}
+    title="Rename playlist"
+    placeholder="Playlist name"
+    initialValue={data.name}
+    confirmText="Save"
+    busy={busy}
+    error={renameError}
+    onCancel={closeRename}
+    onConfirm={confirmRename}
+  />
+{/if}
 
 <style>
   .scrollbar-hide {

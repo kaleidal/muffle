@@ -9,6 +9,8 @@ type LibrespotControllerLike = {
   setPreferred: (isPreferred: boolean) => void
   refreshDeviceId?: () => Promise<string | null>
   trySeek: (positionMs: number) => Promise<boolean>
+  getStatus?: () => 'unavailable' | 'starting' | 'ready' | 'not-found'
+  isBinaryAvailable?: () => boolean
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -18,6 +20,13 @@ export function createPlayerCommands(args: {
   librespotController: LibrespotControllerLike
   refreshPlayback: () => Promise<void>
 }) {
+  const ensureLocalReadyIfAvailable = () => {
+    const available = args.librespotController.isBinaryAvailable?.() ?? false
+    if (!available) return
+    const status = args.librespotController.getStatus?.() ?? 'unavailable'
+    if (status === 'starting') throw new Error('Starting librespot…')
+  }
+
   const getActiveDeviceId = async (token: string): Promise<string | null> => {
     try {
       const res = await apiGet<SpotifyDevicesResponse>(token, '/me/player/devices')
@@ -48,6 +57,7 @@ export function createPlayerCommands(args: {
   }
 
   const runPlayerCommand = async (token: string, cmd: { method: 'PUT' | 'POST'; path: string; body?: any }) => {
+    ensureLocalReadyIfAvailable()
     const attempt = async () => {
       await apiCall(token, cmd)
     }

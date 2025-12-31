@@ -3,6 +3,7 @@
   import { playerStore } from '../stores/playerStore'
   import { spotifyStore, type SpotifyDevice } from '../stores/spotify'
   import { navigationStore } from '../stores/navigationStore'
+  import AddToPlaylistModal from './AddToPlaylistModal.svelte'
 
   let seeking = false
   let seekValue = 0
@@ -16,12 +17,18 @@
   let volumeValue = 0
   let volumeEl: HTMLInputElement | null = null
 
+  let addOpen = false
+  let addTrack: { id: string; uri: string; name: string; artist: string; albumArt: string } | null = null
+
+  $: librespotBlocking = $spotifyStore.librespot.available && $spotifyStore.librespot.status === 'starting'
+
 
   $: if (!seeking) seekValue = $playerStore.progress
   $: if (!volumeChanging) volumeValue = $playerStore.volume
 
   async function togglePlayback() {
     try {
+      if (librespotBlocking) return
       if ($playerStore.isPlaying) await spotifyStore.pause()
       else await spotifyStore.play()
     } catch (e) {
@@ -31,6 +38,7 @@
 
   async function skipNext() {
     try {
+      if (librespotBlocking) return
       await spotifyStore.next()
     } catch (e) {
       console.error('Skip next failed:', e)
@@ -39,6 +47,7 @@
 
   async function skipPrev() {
     try {
+      if (librespotBlocking) return
       await spotifyStore.previous()
     } catch (e) {
       console.error('Skip prev failed:', e)
@@ -48,6 +57,7 @@
   async function commitSeek() {
     seeking = false
     try {
+      if (librespotBlocking) return
       await spotifyStore.seekToPercent(seekValue)
     } catch (e) {
       console.error('Seek failed:', e)
@@ -57,6 +67,7 @@
   async function commitVolume() {
     volumeChanging = false
     try {
+      if (librespotBlocking) return
       await spotifyStore.setVolumePercent(volumeValue)
     } catch (e) {
       console.error('Volume set failed:', e)
@@ -100,11 +111,23 @@
 
   async function toggleShuffle() {
     try {
+      if (librespotBlocking) return
       const next = !get(playerStore).shuffle
       await spotifyStore.setShuffle(next)
     } catch (e) {
       console.error('Shuffle toggle failed:', e)
     }
+  }
+
+  function openAddForCurrent(e?: MouseEvent) {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    const t = $playerStore.currentTrack
+    if (!t) return
+    addTrack = { id: t.id, uri: t.uri, name: t.name, artist: t.artist, albumArt: t.albumArt }
+    addOpen = true
   }
 
   function toggleLyrics() {
@@ -165,6 +188,9 @@
             <h3 class="text-white text-4xl font-extrabold tracking-tight leading-tight truncate">{$playerStore.currentTrack.name}</h3>
             <p class="text-white/60 text-base font-semibold truncate">{$playerStore.currentTrack.artist}</p>
             <p class="text-white/35 text-sm font-semibold truncate mt-1">{$playerStore.currentTrack.album}</p>
+            {#if librespotBlocking}
+              <p class="text-white/45 text-sm font-semibold truncate mt-2">Starting librespot…</p>
+            {/if}
           </div>
         </div>
 
@@ -183,6 +209,7 @@
             }}
             onpointerup={endSeek}
             onchange={endSeek}
+            disabled={librespotBlocking}
             aria-label="Seek"
           />
         </div>
@@ -194,6 +221,7 @@
                 class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
                 aria-label="Devices"
                 onclick={toggleDevices}
+                disabled={librespotBlocking}
               >
                 <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M4 6h16v10H4z" opacity="0.85" />
@@ -237,6 +265,7 @@
               aria-label="Lyrics"
               onclick={toggleLyrics}
               title="Lyrics"
+              disabled={librespotBlocking}
             >
               <svg width="13" height="13" viewBox="0 0 19 23" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M7.1871 6.601L1.1931 14.791C1.05206 14.9837 0.984615 15.2204 1.00296 15.4585C1.0213 15.6966 1.12422 15.9202 1.2931 16.089L2.1101 16.907C2.28145 17.0782 2.50909 17.1813 2.75076 17.1973C2.99242 17.2133 3.23168 17.1411 3.4241 16.994L11.2771 11M12.6871 20.174C11.6871 19.5 10.5591 19 9.1871 19C7.1291 19 5.2591 21.356 3.1871 21C1.1151 20.644 0.412101 17.631 1.6871 16.5M17.1871 6C17.1871 8.76142 14.9485 11 12.1871 11C9.42568 11 7.1871 8.76142 7.1871 6C7.1871 3.23858 9.42568 1 12.1871 1C14.9485 1 17.1871 3.23858 17.1871 6Z" stroke="white" fill="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -249,6 +278,7 @@
               aria-label={$playerStore.shuffle ? 'Disable shuffle' : 'Enable shuffle'}
               aria-pressed={$playerStore.shuffle}
               title={$playerStore.shuffle ? 'Shuffle: on' : 'Shuffle: off'}
+              disabled={librespotBlocking}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class={`${$playerStore.shuffle ? 'text-white' : 'text-white/35'}`}>
                 <path d="M18 14L22 18M22 18L18 22M22 18H15.959C15.3036 17.9933 14.6598 17.8257 14.0844 17.5118C13.509 17.1979 13.0195 16.7474 12.659 16.2L12.3 15.75M18 2L22 6M22 6L18 10M22 6L16.027 6C15.3805 5.99558 14.7426 6.14794 14.1679 6.44401C13.5931 6.74008 13.0987 7.17105 12.727 7.7L7.273 16.3C6.90127 16.829 6.40687 17.2599 5.83215 17.556C5.25742 17.8521 4.61949 18.0044 3.973 18H2M2 6H3.972C4.71746 5.99481 5.44954 6.19805 6.08564 6.58678C6.72174 6.9755 7.23655 7.53426 7.572 8.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -273,6 +303,7 @@
                 }}
                 onpointerup={commitVolume}
                 onchange={commitVolume}
+                disabled={librespotBlocking}
                 aria-label="Volume"
               />
             </div>
@@ -283,6 +314,7 @@
               class="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
               aria-label="Previous"
               onclick={skipPrev}
+              disabled={librespotBlocking}
             >
               <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 6h2v12H6z" />
@@ -294,6 +326,7 @@
               class="w-14 h-14 rounded-full bg-(--accent-primary) flex items-center justify-center bouncy-btn shadow-lg"
               aria-label={$playerStore.isPlaying ? 'Pause' : 'Play'}
               onclick={togglePlayback}
+              disabled={librespotBlocking}
             >
               {#if $playerStore.isPlaying}
                 <svg class="w-7 h-7 text-black" fill="currentColor" viewBox="0 0 24 24">
@@ -310,6 +343,7 @@
               class="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
               aria-label="Next"
               onclick={skipNext}
+              disabled={librespotBlocking}
             >
               <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M16 6h2v12h-2z" />
@@ -363,54 +397,29 @@
             </div>
 
             <div class="flex items-center gap-2 shrink-0">
-              <div class="relative">
-                <button
-                  class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
-                  aria-label="Devices"
-                  onclick={toggleDevices}
-                >
-                  <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M4 6h16v10H4z" opacity="0.85" />
-                    <path d="M8 20h8v-2H8z" />
-                  </svg>
-                </button>
-
-                {#if showDevices}
-                  <div class="absolute right-0 bottom-10 w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30">
-                    <p class="text-white/60 text-xs font-semibold px-2 pb-2">DEVICES</p>
-
-                    {#if loadingDevices}
-                      <div class="px-2 py-2 text-white/50 text-sm">Loading…</div>
-                    {:else if devices.length === 0}
-                      <div class="px-2 py-2 text-white/50 text-sm">No devices</div>
-                    {:else}
-                      <div class="flex flex-col">
-                        {#each devices as d (d.id)}
-                          <button
-                            class="px-2 py-2 rounded-2xl hover:bg-white/10 text-left flex items-center justify-between"
-                            onclick={() => transfer(d)}
-                            disabled={!d.id}
-                          >
-                            <div class="min-w-0">
-                              <div class="text-white text-sm font-semibold truncate">{d.name}</div>
-                              <div class="text-white/50 text-xs truncate">{d.type}</div>
-                            </div>
-                            {#if d.is_active}
-                              <div class="w-2 h-2 rounded-full bg-(--accent-primary)"></div>
-                            {/if}
-                          </button>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
+              <button
+                class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
+                aria-label="Add to playlist"
+                onclick={openAddForCurrent}
+                disabled={librespotBlocking}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M8 12H16M12 8V16M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"
+                    stroke="white"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
 
               <button
                 class={`h-8 w-8 px-3 rounded-full flex items-center justify-center bouncy-btn text-xs font-extrabold tracking-wide transition-colors ${$navigationStore.page === 'lyrics' ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/20 text-white/90'}`}
                 aria-label="Lyrics"
                 onclick={toggleLyrics}
                 title="Lyrics"
+                disabled={librespotBlocking}
               >
                 <svg width="16" height="16" viewBox="0 0 19 23" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M7.1871 6.601L1.1931 14.791C1.05206 14.9837 0.984615 15.2204 1.00296 15.4585C1.0213 15.6966 1.12422 15.9202 1.2931 16.089L2.1101 16.907C2.28145 17.0782 2.50909 17.1813 2.75076 17.1973C2.99242 17.2133 3.23168 17.1411 3.4241 16.994L11.2771 11M12.6871 20.174C11.6871 19.5 10.5591 19 9.1871 19C7.1291 19 5.2591 21.356 3.1871 21C1.1151 20.644 0.412101 17.631 1.6871 16.5M17.1871 6C17.1871 8.76142 14.9485 11 12.1871 11C9.42568 11 7.1871 8.76142 7.1871 6C7.1871 3.23858 9.42568 1 12.1871 1C14.9485 1 17.1871 3.23858 17.1871 6Z" stroke="white" fill="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -421,6 +430,7 @@
                 class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
                 aria-label="Previous"
                 onclick={skipPrev}
+                disabled={librespotBlocking}
               >
                 <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M6 6h2v12H6z" />
@@ -432,6 +442,7 @@
                 class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center bouncy-btn"
                 aria-label="Next"
                 onclick={skipNext}
+                disabled={librespotBlocking}
               >
                 <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M16 6h2v12h-2z" />
@@ -454,11 +465,16 @@
               oninput={() => {
                 seeking = true
               }}
+              disabled={librespotBlocking}
               onpointerup={endSeek}
               onchange={endSeek}
               aria-label="Seek"
             />
           </div>
+
+          {#if librespotBlocking}
+            <p class="text-white/45 text-sm font-semibold truncate">Starting librespot…</p>
+          {/if}
         </div>
       </div>
     {/if}
@@ -472,11 +488,20 @@
       </div>
       <div class="min-w-0">
         <p class="text-white/60 text-sm font-medium">Nothing playing</p>
-        <h3 class="text-white text-2xl font-extrabold tracking-tight">Play something on Spotify</h3>
+        <h3 class="text-white text-2xl font-extrabold tracking-tight">{librespotBlocking ? 'Starting librespot…' : 'Play something on Spotify'}</h3>
       </div>
     </div>
   {/if}
 </div>
+
+<AddToPlaylistModal
+  open={addOpen}
+  track={addTrack}
+  onClose={() => {
+    addOpen = false
+    addTrack = null
+  }}
+/>
 
 <style>
 input[type='range'] {

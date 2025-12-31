@@ -1,4 +1,5 @@
 import type { SpotifyArtist, SpotifyCurrentlyPlaying, SpotifyPlaylist, SpotifyUser } from '../types'
+import type { LibrespotStatus } from '../librespot'
 
 export type SpotifyStatus = 'idle' | 'authenticating' | 'authenticated'
 
@@ -13,6 +14,7 @@ export type SpotifyState = {
   featuredPlaylists: SpotifyPlaylist[]
   topArtists: SpotifyArtist[]
   current: SpotifyCurrentlyPlaying | null
+  librespot: { status: LibrespotStatus; available: boolean }
 }
 
 export const initialSpotifyState: SpotifyState = {
@@ -25,7 +27,8 @@ export const initialSpotifyState: SpotifyState = {
   playlists: [],
   featuredPlaylists: [],
   topArtists: [],
-  current: null
+  current: null,
+  librespot: { status: 'unavailable', available: false }
 }
 
 export function isUnauthorized(err: unknown) {

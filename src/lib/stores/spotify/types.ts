@@ -67,6 +67,7 @@ export type SpotifyPlaylistMeta = {
   uri: string
   images: SpotifyImage[]
   owner?: { display_name?: string }
+  snapshot_id?: string
   tracks?: { total?: number }
 }
 

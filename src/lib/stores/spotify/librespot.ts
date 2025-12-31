@@ -29,11 +29,15 @@ export function createLibrespotController(args: {
   getAccessToken: () => Promise<string | null>
   onReady: () => void
   onError: (message: string) => void
+  onStatusChange?: (next: { status: LibrespotStatus; available: boolean }) => void
 }) {
   let status: LibrespotStatus = 'unavailable'
+  let available = false
   let muffleDeviceId: string | null = null
   let preferred = true
   let stopListener: (() => void) | null = null
+
+  const emit = () => args.onStatusChange?.({ status, available })
 
   const findMuffleDevice = async (): Promise<SpotifyDevice | null> => {
     const token = await args.getAccessToken()
@@ -68,22 +72,31 @@ export function createLibrespotController(args: {
   }
 
   const init = async () => {
+    stopListener?.()
+    stopListener = null
+
     if (!window.electron?.librespotStatus) {
       status = 'unavailable'
+      available = false
+      emit()
       return
     }
 
     try {
       const libStatus = await window.electron.librespotStatus()
 
+      available = !!libStatus.available
+
       if (!libStatus.available) {
         status = 'not-found'
         console.log('Librespot binary not found, using Connect-only mode')
+        emit()
         return
       }
 
       if (libStatus.ready) {
         status = 'ready'
+        emit()
         const deviceId = await waitForMuffleDevice(5000)
         if (deviceId) {
           muffleDeviceId = deviceId
@@ -91,10 +104,15 @@ export function createLibrespotController(args: {
         }
       } else if (libStatus.running) {
         status = 'starting'
+        emit()
+      } else {
+        status = 'starting'
+        emit()
       }
 
       stopListener = window.electron.onLibrespotReady?.(() => {
         status = 'ready'
+        emit()
         void waitForMuffleDevice(10000).then((deviceId) => {
           if (deviceId) {
             muffleDeviceId = deviceId
@@ -105,6 +123,8 @@ export function createLibrespotController(args: {
     } catch (e) {
       console.error('Failed to check librespot status:', e)
       status = 'unavailable'
+      available = false
+      emit()
     }
   }
 
@@ -132,6 +152,7 @@ export function createLibrespotController(args: {
       preferred = isPreferred
     },
     getStatus: () => status,
+    isBinaryAvailable: () => available,
     isAvailable: () => status === 'ready' || status === 'starting',
     trySeek: async (_positionMs: number) => false
   }

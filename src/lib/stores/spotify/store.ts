@@ -14,8 +14,16 @@ import {
   fetchRecentlyPlayedPlaylistContexts,
   fetchTopArtists,
   fetchTopTracks,
+  createPlaylist,
   getLikedSongsView,
   getPlaylistView,
+  isTrackInLiked,
+  playlistContainsTrackUri,
+  renamePlaylist,
+  uploadPlaylistCoverJpegBase64,
+  addTracksToPlaylist,
+  reorderPlaylistTrack,
+  saveTracksToLiked,
   searchTracks
 } from './store/library'
 import { initialSpotifyState, isUnauthorized, type SpotifyState } from './store/state'
@@ -73,7 +81,8 @@ function createSpotifyStore() {
         }
       })()
     },
-    onError: (message) => update((s) => ({ ...s, error: message }))
+    onError: (message) => update((s) => ({ ...s, error: message })),
+    onStatusChange: (next) => update((s) => ({ ...s, librespot: next }))
   })
   const stopPlaybackPolling = () => polling.stop()
 
@@ -121,36 +130,51 @@ function createSpotifyStore() {
     }
   })
 
+  let librespotEnsureInFlight: Promise<string | null> | null = null
+  let lastLibrespotAuthToken: string | null = null
+
   const ensureLibrespotIsActive = async (token: string) => {
-    try {
-      const devicesRes = await apiGet<{ devices?: Array<{ id?: string | null; is_active?: boolean | null }> }>(
-        token,
-        '/me/player/devices'
-      )
-      const active = (devicesRes.devices || []).find((d) => d.is_active && d.id)
-      if (active?.id) return active.id
+    if (librespotEnsureInFlight) return await librespotEnsureInFlight
 
-      if (window.electron?.librespotAuth) {
-        await window.electron.librespotAuth(token)
+    librespotEnsureInFlight = (async () => {
+      try {
+        const devicesRes = await apiGet<{ devices?: Array<{ id?: string | null; is_active?: boolean | null }> }>(
+          token,
+          '/me/player/devices'
+        )
+        const active = (devicesRes.devices || []).find((d) => d.is_active && d.id)
+        if (active?.id) return active.id
+
+        const status = await window.electron?.librespotStatus?.().catch(() => null)
+        const canAuth = !!(window.electron?.librespotAuth && status?.available)
+
+        if (canAuth && lastLibrespotAuthToken !== token) {
+          lastLibrespotAuthToken = token
+          await window.electron!.librespotAuth!(token)
+        }
+
+        await librespotController.init()
+
+        const startTime = Date.now()
+        let deviceId: string | null = null
+        while (Date.now() - startTime < 12000) {
+          deviceId = await librespotController.refreshDeviceId()
+          if (deviceId) break
+          await new Promise((r) => setTimeout(r, 500))
+        }
+        if (!deviceId) return null
+
+        librespotController.setPreferred(true)
+        await apiCall(token, { method: 'PUT', path: '/me/player', body: { device_ids: [deviceId], play: false } })
+        return deviceId
+      } catch {
+        return null
+      } finally {
+        librespotEnsureInFlight = null
       }
+    })()
 
-      await librespotController.init()
-
-      const startTime = Date.now()
-      let deviceId: string | null = null
-      while (Date.now() - startTime < 12000) {
-        deviceId = await librespotController.refreshDeviceId()
-        if (deviceId) break
-        await new Promise((r) => setTimeout(r, 500))
-      }
-      if (!deviceId) return null
-
-      librespotController.setPreferred(true)
-      await apiCall(token, { method: 'PUT', path: '/me/player', body: { device_ids: [deviceId], play: false } })
-      return deviceId
-    } catch {
-      return null
-    }
+    return await librespotEnsureInFlight
   }
 
   const doSafeLogout = (message?: string) =>
@@ -223,6 +247,7 @@ function createSpotifyStore() {
       attachAuthListeners()
 
       void librespotController.init()
+      update((s) => ({ ...s, librespot: { status: librespotController.getStatus(), available: librespotController.isBinaryAvailable() } }))
 
       const sess = loadPersistedSession(storeLike)
       if (!sess.accessToken) return
@@ -265,6 +290,73 @@ function createSpotifyStore() {
 
     async refresh() {
       await ensureFreshToken()
+    },
+
+    async refreshPlaylists() {
+      const token = await ensureFreshToken()
+      if (!token) return
+      try {
+        const playlists = await fetchAllPlaylists(token)
+        update((s) => ({ ...s, playlists: playlists || [] }))
+      } catch {
+        // ignore
+      }
+    },
+
+    async createPlaylist(name: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      const state = get({ subscribe })
+      const userId = state.user?.id
+      if (!userId) throw new Error('Missing Spotify user')
+
+      const created = await createPlaylist(token, { userId, name })
+      await (this as any).refreshPlaylists()
+      return created
+    },
+
+    async renamePlaylist(playlistId: string, name: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      await renamePlaylist(token, { playlistId, name })
+      await (this as any).refreshPlaylists()
+    },
+
+    async setPlaylistCoverJpegBase64(playlistId: string, jpegBase64: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      await uploadPlaylistCoverJpegBase64(token, { playlistId, jpegBase64 })
+      await (this as any).refreshPlaylists()
+    },
+
+    async addTrackToLiked(trackId: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      await saveTracksToLiked(token, [trackId])
+    },
+
+    async isTrackInLiked(trackId: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      return await isTrackInLiked(token, trackId)
+    },
+
+    async addTrackToPlaylist(playlistId: string, uri: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      await addTracksToPlaylist(token, { playlistId, uris: [uri] })
+    },
+
+    async isTrackInPlaylist(playlistId: string, uri: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      return await playlistContainsTrackUri(token, { playlistId, trackUri: uri })
+    },
+
+    async reorderPlaylistTrack(playlistId: string, fromIndex: number, toIndex: number, snapshotId?: string | null) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      return await reorderPlaylistTrack(token, { playlistId, fromIndex, toIndex, snapshotId })
     },
 
     async getHomeSections() {

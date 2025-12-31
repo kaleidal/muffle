@@ -9,7 +9,10 @@ export const DEFAULT_SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
   'user-top-read',
-  'user-read-recently-played'
+  'user-read-recently-played',
+  'ugc-image-upload',
+  'playlist-modify-public',
+  'playlist-modify-private'
 ]
 
 export const STORAGE_KEYS = {
