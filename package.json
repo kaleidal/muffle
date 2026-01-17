@@ -43,7 +43,9 @@
       {
         "from": "resources/librespot",
         "to": "librespot",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -62,14 +64,19 @@
   },
   "description": "A beautiful, fluid Spotify desktop client",
   "homepage": "https://muffle.kaleid.al",
-  "keywords": ["spotify", "music", "electron", "svelte"],
+  "keywords": [
+    "spotify",
+    "music",
+    "electron",
+    "svelte"
+  ],
   "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vite build && electron-builder",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && electron-builder"
+    "dist": "vite build && electron-builder"
   },
   "trustedDependencies": [
     "electron"
