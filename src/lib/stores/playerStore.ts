@@ -12,13 +12,6 @@ export type Track = {
 
 export type RepeatMode = "off" | "all" | "one";
 
-export type NowPlayingToast = {
-  id: string;
-  name: string;
-  artist: string;
-  albumArt: string;
-};
-
 export type PlayerState = {
   currentTrack: Track | null;
   nextTrack: Track | null;
@@ -33,9 +26,8 @@ export type PlayerState = {
   showNextPreview: boolean;
   peekLatched: boolean;
   isTransitioning: boolean;
-  nowPlayingToast: NowPlayingToast | null;
-  nowPlayingToastKey: number;
   isQueueLoading: boolean;
+  trackChangeKey: number;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -57,14 +49,12 @@ function createPlayerStore() {
     showNextPreview: false,
     peekLatched: false,
     isTransitioning: false,
-    nowPlayingToast: null,
-    nowPlayingToastKey: 0,
     isQueueLoading: false,
+    trackChangeKey: 0,
   });
 
   let progressInterval: ReturnType<typeof setInterval> | null = null;
   let lastTickAt = 0;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPeekTrackId: string | null = null;
   let optimisticIsPlaying: null | { value: boolean; until: number } = null;
   let optimisticSeek: null | {
@@ -100,27 +90,11 @@ function createPlayerStore() {
     }, 600);
   };
 
-  const showNowPlayingToast = (track: Track) => {
-    if (toastTimer) {
-      clearTimeout(toastTimer);
-      toastTimer = null;
-    }
-
+  const triggerTrackChangeBounce = () => {
     update((state) => ({
       ...state,
-      nowPlayingToast: {
-        id: track.id,
-        name: track.name,
-        artist: track.artist,
-        albumArt: track.albumArt,
-      },
-      nowPlayingToastKey: state.nowPlayingToastKey + 1,
+      trackChangeKey: state.trackChangeKey + 1,
     }));
-
-    toastTimer = setTimeout(() => {
-      update((state) => ({ ...state, nowPlayingToast: null }));
-      toastTimer = null;
-    }, 1600);
   };
 
   const tick = () => {
@@ -388,7 +362,7 @@ function createPlayerStore() {
       if (effectiveIsPlaying) startTicking();
       else stopTicking();
 
-      if (toastTrack) showNowPlayingToast(toastTrack);
+      if (toastTrack) triggerTrackChangeBounce();
       if (changedTrack) setTransitioning();
 
       if (changedTrack) lastPeekTrackId = null;
@@ -504,7 +478,7 @@ function createPlayerStore() {
         showNextPreview: false,
       }));
 
-      showNowPlayingToast(track);
+      triggerTrackChangeBounce();
       setTransitioning();
       api.play();
     },

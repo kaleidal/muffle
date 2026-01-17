@@ -721,7 +721,7 @@
                     >
                         {librespotBlocking
                             ? "Starting librespot…"
-                            : "Play something on Spotify"}
+                            : "Play something"}
                     </h3>
                 </div>
             {/if}
