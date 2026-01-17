@@ -67,6 +67,7 @@ function createPlayerStore() {
   let optimisticIsPlaying: null | { value: boolean; until: number } = null
   let optimisticSeek: null | { value: number; until: number; trackId: string | null } = null
   let optimisticShuffle: null | { value: boolean; until: number } = null
+  let optimisticTrackUntil: number = 0
 
   const stopTicking = () => {
     if (progressInterval) {
@@ -205,14 +206,14 @@ function createPlayerStore() {
 
     setOptimisticTrack(track: Track) {
       if (!track) return
-      optimisticIsPlaying = null
-      stopTicking()
+      optimisticIsPlaying = { value: true, until: Date.now() + 10000 }
+      optimisticTrackUntil = Date.now() + 5000
 
       update((state) => ({
         ...state,
         currentTrack: track,
         progress: 0,
-        isPlaying: false,
+        isPlaying: true,
         showNextPreview: false,
         peekLatched: false
       }))
@@ -220,6 +221,7 @@ function createPlayerStore() {
       lastTickAt = Date.now()
       lastPeekTrackId = null
       setTransitioning()
+      startTicking()
     },
 
     toggleExpanded() {
@@ -253,6 +255,12 @@ function createPlayerStore() {
       }
 
       const incomingTrackId = args.current?.id ?? null
+
+      const allowTrackFromServer = () => {
+        if (now >= optimisticTrackUntil) return true
+        return false
+      }
+
       const allowProgressFromServer = () => {
         if (!optimisticSeek) return true
         if (now >= optimisticSeek.until) {
@@ -273,10 +281,13 @@ function createPlayerStore() {
         return false
       }
 
+      const useServerTrack = allowTrackFromServer()
+
       update((state) => {
         const prevId = state.currentTrack?.id ?? null
-        const nextId = args.current?.id ?? null
-        changedTrack = !!nextId && nextId !== prevId
+        const nextId = useServerTrack ? (args.current?.id ?? null) : prevId
+        const effectiveTrack = useServerTrack ? args.current : state.currentTrack
+        changedTrack = useServerTrack && !!nextId && nextId !== prevId
 
         const nextFromArgs = args.next ?? null
         const effectiveNext = state.queueSource === 'spotify' ? nextFromArgs ?? state.nextTrack : state.nextTrack
@@ -288,18 +299,17 @@ function createPlayerStore() {
         const suppressForPeek = !!(changedTrack && lastPeekTrackId && nextId && lastPeekTrackId === nextId)
         toastTrack = changedTrack && !suppressForPeek ? args.current : null
 
-        const nextProgress = allowProgressFromServer() ? clamp(args.progressPct, 0, 100) : state.progress
+        const nextProgress = (useServerTrack && allowProgressFromServer()) ? clamp(args.progressPct, 0, 100) : state.progress
 
-        const remainingMs = args.current ? args.current.duration * (1 - nextProgress / 100) : Infinity
+        const trackForCalc = effectiveTrack ?? args.current
+        const remainingMs = trackForCalc ? trackForCalc.duration * (1 - nextProgress / 100) : Infinity
         const showNextPreview = remainingMs <= 15000 && !!effectiveNext
 
-        // Non-sticky latch: if progress moves back out of the 15s window (seek), it turns off.
-        // Hold at the very end if we were already latched, to cover the boundary gap.
         const peekLatched = showNextPreview || (state.peekLatched && args.progressPct >= 99.5)
 
         return {
           ...state,
-          currentTrack: args.current,
+          currentTrack: effectiveTrack,
           nextTrack:
             state.queueSource === 'spotify'
               ? args.next === undefined

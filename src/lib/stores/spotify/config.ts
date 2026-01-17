@@ -18,7 +18,8 @@ export const DEFAULT_SCOPES = [
 export const STORAGE_KEYS = {
   accessToken: 'spotify_access_token',
   refreshToken: 'spotify_refresh_token',
-  expiresAt: 'spotify_expires_at'
+  expiresAt: 'spotify_expires_at',
+  shuffleEnabled: 'muffle_shuffle_enabled'
 } as const
 
 export function getClientId() {

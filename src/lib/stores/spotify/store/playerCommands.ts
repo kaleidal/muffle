@@ -146,7 +146,6 @@ export function createPlayerCommands(args: {
       throw e
     }
 
-    void args.refreshPlayback()
   }
 
   const play = async () => {
@@ -174,7 +173,6 @@ export function createPlayerCommands(args: {
       throw e
     }
 
-    void args.refreshPlayback()
   }
 
   const pause = async () => {
@@ -202,32 +200,56 @@ export function createPlayerCommands(args: {
       throw e
     }
 
-    void args.refreshPlayback()
   }
 
   const next = async () => {
+    const prevState = get(playerStore)
+    const nextTrack = prevState.nextTrack
+    if (nextTrack) {
+      playerStore.setOptimisticTrack(nextTrack)
+      playerStore.setOptimisticIsPlaying(true, 5000)
+    }
+
     const token = await args.ensureFreshToken()
     if (!token) return
 
     const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
-    await runPlayerCommand(token, { method: 'POST', path: `/me/player/next${qs}` })
-    void args.refreshPlayback()
+    try {
+      await runPlayerCommand(token, { method: 'POST', path: `/me/player/next${qs}` })
+    } catch (e) {
+      playerStore.clearOptimisticIsPlaying()
+      void args.refreshPlayback()
+      throw e
+    }
+
   }
 
   const previous = async () => {
+    playerStore.setOptimisticSeek(0, 3000)
+    playerStore.setOptimisticIsPlaying(true, 5000)
+
     const token = await args.ensureFreshToken()
     if (!token) return
 
     const preferred = args.librespotController.getPreferredDeviceId()
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
-    await runPlayerCommand(token, { method: 'POST', path: `/me/player/previous${qs}` })
-    void args.refreshPlayback()
+    try {
+      await runPlayerCommand(token, { method: 'POST', path: `/me/player/previous${qs}` })
+    } catch (e) {
+      playerStore.clearOptimisticSeek()
+      playerStore.clearOptimisticIsPlaying()
+      void args.refreshPlayback()
+      throw e
+    }
+
   }
 
   const playTrackUri = async (uri: string) => {
+    playerStore.setOptimisticIsPlaying(true, 5000)
+
     const token = await args.ensureFreshToken()
     if (!token) return
 
@@ -235,10 +257,11 @@ export function createPlayerCommands(args: {
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : ''
 
     await runPlayerCommand(token, { method: 'PUT', path: `/me/player/play${qs}`, body: { uris: [uri] } })
-    void args.refreshPlayback()
   }
 
   const playPlaylistTrack = async (playlistUri: string, position: number) => {
+    playerStore.setOptimisticIsPlaying(true, 5000)
+
     const token = await args.ensureFreshToken()
     if (!token) return
 
@@ -254,10 +277,20 @@ export function createPlayerCommands(args: {
         position_ms: 0
       }
     })
-    void args.refreshPlayback()
+
+    try {
+      const savedShuffle = localStorage.getItem('muffle_shuffle_enabled') === 'true'
+      const currentShuffle = get(playerStore).shuffle
+      if (savedShuffle !== currentShuffle) {
+        await runPlayerCommand(token, { method: 'PUT', path: `/me/player/shuffle?state=${savedShuffle ? 'true' : 'false'}` })
+        playerStore.setShuffle(savedShuffle)
+      }
+    } catch {}
   }
 
   const playContextUri = async (contextUri: string) => {
+    playerStore.setOptimisticIsPlaying(true, 5000)
+
     const token = await args.ensureFreshToken()
     if (!token) return
 
@@ -269,10 +302,20 @@ export function createPlayerCommands(args: {
       path: `/me/player/play${qs}`,
       body: { context_uri: contextUri, position_ms: 0 }
     })
-    void args.refreshPlayback()
+
+    try {
+      const savedShuffle = localStorage.getItem('muffle_shuffle_enabled') === 'true'
+      const currentShuffle = get(playerStore).shuffle
+      if (savedShuffle !== currentShuffle) {
+        await runPlayerCommand(token, { method: 'PUT', path: `/me/player/shuffle?state=${savedShuffle ? 'true' : 'false'}` })
+        playerStore.setShuffle(savedShuffle)
+      }
+    } catch {}
   }
 
   const playUris = async (uris: string[]) => {
+    playerStore.setOptimisticIsPlaying(true, 5000)
+
     const token = await args.ensureFreshToken()
     if (!token) return
 
@@ -287,12 +330,15 @@ export function createPlayerCommands(args: {
       path: `/me/player/play${qs}`,
       body: { uris: clean }
     })
-    void args.refreshPlayback()
   }
 
   const setShuffle = async (enabled: boolean) => {
     const prev = get(playerStore).shuffle
     if (prev !== enabled) playerStore.setOptimisticShuffle(enabled)
+
+    try {
+      localStorage.setItem('muffle_shuffle_enabled', enabled ? 'true' : 'false')
+    } catch {}
 
     const token = await args.ensureFreshToken()
     if (!token) {
@@ -310,7 +356,6 @@ export function createPlayerCommands(args: {
       throw e
     }
 
-    void args.refreshPlayback()
   }
 
   const setVolumePercent = async (pct: number) => {

@@ -249,6 +249,13 @@ function createSpotifyStore() {
       void librespotController.init()
       update((s) => ({ ...s, librespot: { status: librespotController.getStatus(), available: librespotController.isBinaryAvailable() } }))
 
+      try {
+        const savedShuffle = localStorage.getItem('muffle_shuffle_enabled')
+        if (savedShuffle !== null) {
+          playerStore.setShuffle(savedShuffle === 'true')
+        }
+      } catch {}
+
       const sess = loadPersistedSession(storeLike)
       if (!sess.accessToken) return
 

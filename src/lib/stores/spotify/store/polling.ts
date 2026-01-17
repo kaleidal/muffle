@@ -2,6 +2,8 @@ export function createPolling(args: { fetchTick: () => Promise<void> }) {
   let poll: ReturnType<typeof setInterval> | null = null
   let inFlight = false
 
+  const POLL_INTERVAL = 2500
+
   const start = () => {
     if (poll) return
     poll = setInterval(() => {
@@ -10,7 +12,7 @@ export function createPolling(args: { fetchTick: () => Promise<void> }) {
       void args.fetchTick().finally(() => {
         inFlight = false
       })
-    }, 3000)
+    }, POLL_INTERVAL)
   }
 
   const stop = () => {
