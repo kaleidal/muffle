@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { spotifyStore } from '../stores/spotify'
-  import { navigationStore } from '../stores/navigationStore'
   import { image, loadHome, type HomeData, type HomeTrack } from '../stores/spotify/home'
 
   let data = $state.raw<HomeData | null>(null)
@@ -190,43 +189,21 @@
         </section>
       {/if}
 
-      {#if data.shows.length || data.playlists.length}
-        <div class="lower-grid">
-          {#if data.shows.length}
-            <section class="shows">
-              <div class="section-heading">
-                <h2>Saved for later</h2>
-              </div>
-              <div class="show-stack">
-                {#each data.shows.slice(0, 5) as show (show.id)}
-                  <button onclick={() => spotifyStore.playContextUri(show.uri)}>
-                    <img src={image(show.images)} alt={show.name} />
-                    <span><strong>{show.name}</strong><small>{show.publisher || 'Podcast'}</small></span>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
-                  </button>
-                {/each}
-              </div>
-            </section>
-          {/if}
-
-          {#if data.playlists.length}
-            <section class="playlist-wall">
-              <div class="section-heading">
-                <h2>Your playlists</h2>
-              </div>
-              <div class="playlist-mosaic">
-                {#each data.playlists.slice(0, 8) as playlist (playlist.id)}
-                  <button
-                    onclick={() => navigationStore.openPlaylist(playlist.id)}
-                  >
-                    <img src={image(playlist.images)} alt={playlist.name} />
-                    <span>{playlist.name}</span>
-                  </button>
-                {/each}
-              </div>
-            </section>
-          {/if}
-        </div>
+      {#if data.shows.length}
+        <section class="shows lower-section">
+          <div class="section-heading">
+            <h2>Saved for later</h2>
+          </div>
+          <div class="show-stack">
+            {#each data.shows.slice(0, 5) as show (show.id)}
+              <button onclick={() => spotifyStore.playContextUri(show.uri)}>
+                <img src={image(show.images)} alt={show.name} />
+                <span><strong>{show.name}</strong><small>{show.publisher || 'Podcast'}</small></span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+              </button>
+            {/each}
+          </div>
+        </section>
       {/if}
     </div>
   {/if}
@@ -252,7 +229,7 @@
   .hero-artwork img { position: absolute; width: 14.5rem; aspect-ratio: 1; object-fit: cover; border-radius: 2rem; right: calc(2rem + var(--stack-index) * 4.8rem); top: calc(3.2rem + var(--stack-index) * 1.25rem); transform: rotate(calc((var(--stack-index) - 1) * 7deg)); box-shadow: 0 1.8rem 4rem rgba(0,0,0,.44); }
   .section-heading { margin-bottom: 1.05rem; }
   .section-heading h2 { margin: 0; font-size: 1.35rem; letter-spacing: -.025em; }
-  .quick-section, .editorial-grid, .discovery, .album-shelf, .lower-grid { margin-top: 2.25rem; }
+  .quick-section, .editorial-grid, .discovery, .album-shelf, .lower-section { margin-top: 2.25rem; }
   .quick-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
   .quick-pick { display: grid; grid-template-columns: 4.2rem minmax(0,1fr) 2.6rem; align-items: center; gap: .85rem; padding: .55rem .7rem .55rem .55rem; border-radius: 1.35rem; background: #191919; color: white; text-align: left; transition: transform .2s ease, background .2s ease; }
   .quick-pick:hover { transform: translateY(-2px); background: #222; }
@@ -265,7 +242,7 @@
   .quick-pick:hover .quick-play { opacity: 1; background: #f3f3f3; color: #090909; }
   .quick-play svg { width: 1rem; fill: currentColor; }
   .editorial-grid { display: grid; grid-template-columns: minmax(0,1.12fr) minmax(20rem,.88fr); gap: 1rem; }
-  .chart, .artist-field, .shows, .playlist-wall { padding: 1.5rem; border-radius: 2rem; background: #171717; }
+  .chart, .artist-field, .shows { padding: 1.5rem; border-radius: 2rem; background: #171717; }
   .track-list { display: grid; }
   .track-row { display: grid; grid-template-columns: 2.2rem 3rem minmax(0,1fr) auto; align-items: center; gap: .75rem; padding: .6rem .4rem; border-radius: 1rem; color: white; text-align: left; transition: background .18s ease, transform .18s ease; }
   .track-row:hover { background: rgba(255,255,255,.07); transform: translateX(3px); }
@@ -299,8 +276,7 @@
   .album strong, .album span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .album strong { margin-top: .65rem; font-size: .86rem; }
   .album span { margin-top: .15rem; color: rgba(255,255,255,.4); font-size: .75rem; }
-  .lower-grid { display: grid; grid-template-columns: minmax(18rem,.8fr) minmax(0,1.2fr); gap: 1rem; }
-  .show-stack { display: grid; gap: .5rem; }
+  .show-stack { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; }
   .show-stack button { display: grid; grid-template-columns: 3.7rem minmax(0,1fr) 1.2rem; gap: .8rem; align-items: center; padding: .55rem; color: white; text-align: left; border-radius: 1rem; transition: background .2s ease; }
   .show-stack button:hover { background: rgba(255,255,255,.06); }
   .show-stack img { width: 3.7rem; aspect-ratio: 1; object-fit: cover; border-radius: 1rem; }
@@ -308,11 +284,6 @@
   .show-stack strong, .show-stack small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .show-stack small { color: rgba(255,255,255,.4); margin-top: .16rem; }
   .show-stack svg { width: 1.1rem; fill: none; stroke: rgba(255,255,255,.42); stroke-width: 2; }
-  .playlist-mosaic { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .65rem; }
-  .playlist-mosaic button { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 1.35rem; background: #222; color: white; text-align: left; }
-  .playlist-mosaic img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
-  .playlist-mosaic button:hover img { transform: scale(1.05); }
-  .playlist-mosaic span { position: absolute; inset: auto .65rem .65rem; padding: .45rem .6rem; border-radius: .75rem; background: rgba(6,6,6,.72); backdrop-filter: blur(12px); font-size: .75rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .home-skeleton { padding: 5rem 2.5rem; }
   .skeleton { background: #191919; animation: breathe 1.5s ease-in-out infinite; }
   .hero-skeleton { height: 21rem; border-radius: 2.25rem; }
@@ -325,7 +296,7 @@
   @keyframes pulse { 50% { transform: scale(.65); opacity: .55; } }
   @media (max-width: 1120px) {
     .quick-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-    .editorial-grid, .lower-grid { grid-template-columns: 1fr; }
+    .editorial-grid { grid-template-columns: 1fr; }
     .discovery-flow { grid-template-columns: repeat(4,minmax(0,1fr)); }
     .discovery-flow button.feature { grid-column: span 4; }
     .artist-cloud { min-height: 22rem; }
@@ -337,7 +308,7 @@
     .hero-artwork { display: none; }
     .quick-grid { grid-template-columns: 1fr; }
     .section-heading { align-items: flex-start; flex-direction: column; gap: .25rem; }
-    .playlist-mosaic { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .show-stack { grid-template-columns: 1fr; }
     .discovery-flow { grid-template-columns: 1fr; grid-auto-rows: auto; }
     .discovery-flow button, .discovery-flow button.feature { grid-column: auto; grid-row: auto; grid-template-columns: 4.5rem minmax(0,1fr); }
     .discovery-flow img, .discovery-flow .feature img { width: 4.5rem; }

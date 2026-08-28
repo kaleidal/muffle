@@ -40,7 +40,6 @@ export type HomeData = {
   topArtists: HomeArtist[]
   albums: HomeAlbum[]
   shows: HomeShow[]
-  playlists: HomePlaylist[]
 }
 
 type Page<T> = { items?: T[] }
@@ -54,7 +53,7 @@ async function settled<T>(promise: Promise<T>, fallback: T): Promise<T> {
 }
 
 export async function loadHome(token: string): Promise<HomeData> {
-  const [recent, topTracks, topArtists, albums, shows, playlists] = await Promise.all([
+  const [recent, topTracks, topArtists, albums, shows] = await Promise.all([
     settled(
       apiGet<{ items?: Array<{ track?: HomeTrack }> }>(token, '/me/player/recently-played?limit=24'),
       {},
@@ -63,7 +62,6 @@ export async function loadHome(token: string): Promise<HomeData> {
     settled(apiGet<Page<HomeArtist>>(token, '/me/top/artists?time_range=medium_term&limit=16'), {}),
     settled(apiGet<Page<{ album?: HomeAlbum }>>(token, '/me/albums?limit=16'), {}),
     settled(apiGet<Page<{ show?: HomeShow }>>(token, '/me/shows?limit=12'), {}),
-    settled(apiGet<Page<HomePlaylist>>(token, '/me/playlists?limit=24'), {}),
   ])
 
   const uniqueRecent = new Map<string, HomeTrack>()
@@ -87,7 +85,6 @@ export async function loadHome(token: string): Promise<HomeData> {
     topArtists: topArtists.items ?? [],
     albums: (albums.items ?? []).flatMap((item) => (item.album ? [item.album] : [])),
     shows: (shows.items ?? []).flatMap((item) => (item.show ? [item.show] : [])),
-    playlists: playlists.items ?? [],
   }
 }
 
