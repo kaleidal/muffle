@@ -55,3 +55,6 @@ panic = "abort"
 
 [profile.dev.package."*"]
 opt-level = 2
+
+[patch.crates-io]
+hyper-proxy2 = { git = "https://github.com/siketyan/hyper-proxy2", rev = "2a1a9845f4c9a100c45bf3dc0f1222773d5a33b7" }
