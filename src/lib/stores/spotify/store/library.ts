@@ -1,36 +1,13 @@
-import { apiCall, apiCallJson, apiGet, apiGetUrl } from '../api'
+import { apiCall, apiCallJson, apiCallText, apiGet, apiGetUrl } from '../api'
 import type {
   SpotifyArtist,
   SpotifyPaging,
   SpotifyPlaylist,
   SpotifyPlaylistMeta,
   SpotifyPlaylistTracksPage,
-  SpotifySavedTracksPage,
-  SpotifySearchTracksResponse
+  SpotifySavedTracksPage
 } from '../types'
 import { mapToPlayableTrack, type PlayableTrack } from '../mappers'
-
-type SpotifyRecommendationsResponse = {
-  tracks: Array<{
-    id: string
-    uri: string
-    name: string
-    duration_ms: number
-    artists: { name: string }[]
-    album: { name: string; images: { url: string }[] }
-  }>
-}
-
-type SpotifyTopTracksResponse = {
-  items: SpotifyRecommendationsResponse['tracks']
-}
-
-type SpotifyRecentlyPlayedResponse = {
-  items: Array<{
-    track: SpotifyRecommendationsResponse['tracks'][number] | null
-    context: { uri: string; type: string } | null
-  }>
-}
 
 export async function fetchAllPlaylists(token: string) {
   const items: SpotifyPlaylist[] = []
@@ -47,32 +24,20 @@ export async function fetchAllPlaylists(token: string) {
   return items
 }
 
-export async function searchTracks(token: string, query: string): Promise<PlayableTrack[]> {
-  const q = query.trim()
-  if (!q) return []
-
-  const res = await apiGet<SpotifySearchTracksResponse>(
-    token,
-    `/search?type=track&limit=30&market=from_token&q=${encodeURIComponent(q)}`
-  )
-
-  const items = res?.tracks?.items || []
-  return items.map(mapToPlayableTrack)
-}
-
 export async function getPlaylistView(token: string, playlistId: string) {
   const meta = await apiGet<SpotifyPlaylistMeta>(token, `/playlists/${encodeURIComponent(playlistId)}?market=from_token`)
 
   const tracks: PlayableTrack[] = []
   let page = await apiGet<SpotifyPlaylistTracksPage>(
     token,
-    `/playlists/${encodeURIComponent(playlistId)}/tracks?limit=100&market=from_token`
+    `/playlists/${encodeURIComponent(playlistId)}/items?limit=100&market=from_token&additional_types=track,episode`
   )
 
   const push = (p: SpotifyPlaylistTracksPage) => {
     for (const it of p.items || []) {
-      if (!it?.track) continue
-      tracks.push(mapToPlayableTrack(it.track))
+      const item = (it as typeof it & { item?: typeof it.track }).item ?? it.track
+      if (!item) continue
+      tracks.push(mapToPlayableTrack(item))
     }
   }
 
@@ -92,6 +57,7 @@ export async function getPlaylistView(token: string, playlistId: string) {
     snapshotId: meta.snapshot_id ?? null,
     images: meta.images || [],
     ownerName: meta.owner?.display_name || 'Spotify',
+    ownerId: meta.owner?.id || null,
     tracks
   }
 }
@@ -122,6 +88,8 @@ export async function getLikedSongsView(token: string) {
     uri: '',
     images: [],
     ownerName: 'You',
+    ownerId: null,
+    snapshotId: null,
     tracks
   }
 }
@@ -129,36 +97,6 @@ export async function getLikedSongsView(token: string) {
 export async function fetchTopArtists(token: string) {
   const res = await apiGet<{ items: SpotifyArtist[] }>(token, '/me/top/artists?limit=10&time_range=short_term')
   return res.items || []
-}
-
-export async function fetchTopTracks(token: string, limit = 12): Promise<PlayableTrack[]> {
-  const l = Math.max(1, Math.min(50, limit | 0))
-  const res = await apiGet<SpotifyTopTracksResponse>(
-    token,
-    `/me/top/tracks?limit=${l}&time_range=short_term&market=from_token`
-  )
-  return (res.items || []).map(mapToPlayableTrack)
-}
-
-export async function fetchRecentlyPlayedPlaylistContexts(token: string, limit = 50): Promise<string[]> {
-  const l = Math.max(1, Math.min(50, limit | 0))
-  const res = await apiGet<SpotifyRecentlyPlayedResponse>(token, `/me/player/recently-played?limit=${l}`)
-
-  const seen = new Set<string>()
-  const playlistIds: string[] = []
-
-  for (const it of res.items || []) {
-    const uri = it?.context?.uri
-    if (!uri) continue
-    const m = /^spotify:playlist:([A-Za-z0-9]+)$/.exec(uri)
-    if (!m) continue
-    const id = m[1]
-    if (seen.has(id)) continue
-    seen.add(id)
-    playlistIds.push(id)
-  }
-
-  return playlistIds
 }
 
 export async function createPlaylist(token: string, args: { userId: string; name: string }) {
@@ -181,7 +119,27 @@ export async function renamePlaylist(token: string, args: { playlistId: string; 
 export async function addTracksToPlaylist(token: string, args: { playlistId: string; uris: string[] }) {
   const uris = (args.uris || []).filter(Boolean)
   if (!uris.length) return
-  await apiCall(token, { method: 'POST', path: `/playlists/${encodeURIComponent(args.playlistId)}/tracks`, body: { uris } })
+  await apiCall(token, { method: 'POST', path: `/playlists/${encodeURIComponent(args.playlistId)}/items`, body: { uris } })
+}
+
+export async function removeTracksFromPlaylist(token: string, args: { playlistId: string; uris: string[]; snapshotId?: string | null }) {
+  const items = args.uris.filter(Boolean).map((uri) => ({ uri }))
+  if (!items.length) return null
+  const body: { items: Array<{ uri: string }>; snapshot_id?: string } = { items }
+  if (args.snapshotId) body.snapshot_id = args.snapshotId
+  const result = await apiCallJson<{ snapshot_id?: string }>(token, {
+    method: 'DELETE',
+    path: `/playlists/${encodeURIComponent(args.playlistId)}/items`,
+    body,
+  })
+  return result?.snapshot_id ?? null
+}
+
+export async function unsaveFromLibrary(token: string, uris: string[]) {
+  const clean = uris.filter(Boolean).slice(0, 40)
+  if (!clean.length) return
+  const query = new URLSearchParams({ uris: clean.join(',') })
+  await apiCall(token, { method: 'DELETE', path: `/me/library?${query}` })
 }
 
 export async function reorderPlaylistTrack(token: string, args: { playlistId: string; fromIndex: number; toIndex: number; snapshotId?: string | null }) {
@@ -197,60 +155,47 @@ export async function reorderPlaylistTrack(token: string, args: { playlistId: st
 
   if (args.snapshotId) body.snapshot_id = args.snapshotId
 
-  const res = await fetch(`https://api.spotify.com/v1/playlists/${encodeURIComponent(args.playlistId)}/tracks`, {
+  const result = await apiCallJson<{ snapshot_id?: string }>(token, {
     method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify(body)
+    path: `/playlists/${encodeURIComponent(args.playlistId)}/items`,
+    body
   })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Spotify API error ${res.status} ${res.statusText} ${text}`)
-  }
-
-  const json = (await res.json().catch(() => null)) as any
-  return (json?.snapshot_id as string | undefined) ?? null
+  return result?.snapshot_id ?? null
 }
 
 export async function saveTracksToLiked(token: string, trackIds: string[]) {
-  const ids = (trackIds || []).filter(Boolean).slice(0, 50)
+  const ids = (trackIds || []).filter(Boolean).slice(0, 40)
   if (!ids.length) return
-  const qs = new URLSearchParams({ ids: ids.join(',') })
-  await apiCall(token, { method: 'PUT', path: `/me/tracks?${qs.toString()}` })
+  const uris = ids.map((id) => `spotify:track:${id}`)
+  const qs = new URLSearchParams({ uris: uris.join(',') })
+  await apiCall(token, { method: 'PUT', path: `/me/library?${qs.toString()}` })
 }
 
 export async function uploadPlaylistCoverJpegBase64(token: string, args: { playlistId: string; jpegBase64: string }) {
   const payload = (args.jpegBase64 || '').trim()
   if (!payload) throw new Error('Cover image data is required')
 
-  const res = await fetch(`https://api.spotify.com/v1/playlists/${encodeURIComponent(args.playlistId)}/images`, {
+  await apiCallText(token, {
     method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'content-type': 'image/jpeg'
-    },
-    body: payload
+    path: `/playlists/${encodeURIComponent(args.playlistId)}/images`,
+    textBody: payload,
+    contentType: 'image/jpeg'
   })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Spotify API error ${res.status} ${res.statusText} ${text}`)
-  }
 }
 
 export async function isTrackInLiked(token: string, trackId: string): Promise<boolean> {
   const id = String(trackId || '').trim()
   if (!id) return false
-  const qs = new URLSearchParams({ ids: id })
-  const res = await apiGet<boolean[]>(token, `/me/tracks/contains?${qs.toString()}`)
+  const qs = new URLSearchParams({ uris: `spotify:track:${id}` })
+  const res = await apiGet<boolean[]>(token, `/me/library/contains?${qs.toString()}`)
   return !!res?.[0]
 }
 
 type PlaylistTracksContainsPage = {
-  items?: Array<{ track?: { uri?: string | null; id?: string | null } | null }>
+  items?: Array<{
+    item?: { uri?: string | null; id?: string | null } | null
+    track?: { uri?: string | null; id?: string | null } | null
+  }>
   next?: string | null
 }
 
@@ -263,18 +208,18 @@ export async function playlistContainsTrackUri(
   if (!playlistId || !trackUri) return false
 
   const maxPages = Math.max(1, Math.min(25, args.maxPages ?? 6))
-  const fields = 'items(track(uri,id)),next'
+  const fields = 'items(item(uri,id)),next'
 
   let page = await apiGet<PlaylistTracksContainsPage>(
     token,
-    `/playlists/${encodeURIComponent(playlistId)}/tracks?limit=100&market=from_token&fields=${encodeURIComponent(fields)}`
+    `/playlists/${encodeURIComponent(playlistId)}/items?limit=100&market=from_token&fields=${encodeURIComponent(fields)}`
   )
 
   let guard = 0
   while (guard < maxPages) {
     guard += 1
     for (const it of page?.items || []) {
-      const uri = it?.track?.uri
+      const uri = it?.item?.uri ?? it?.track?.uri
       if (uri && uri === trackUri) return true
     }
 

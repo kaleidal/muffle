@@ -13,13 +13,94 @@
     import PlaylistPage from "./lib/components/PlaylistPage.svelte";
     import SearchPage from "./lib/components/SearchPage.svelte";
     import LyricsPage from "./lib/components/LyricsPage.svelte";
+    import LibraryPage from "./lib/components/LibraryPage.svelte";
+    import SettingsPage from "./lib/components/SettingsPage.svelte";
+    import EntityPage from "./lib/components/EntityPage.svelte";
 
     try {
         spotifyStore.init();
     } catch (error) {
         console.error("Failed to initialize Spotify store:", error);
     }
+
+    let volumeBeforeMute = 80;
+
+    function run(command: Promise<unknown>) {
+        void command.catch((error) => console.error("Keyboard command failed:", error));
+    }
+
+    function handleKeyboard(event: KeyboardEvent) {
+        const target = event.target as HTMLElement | null;
+        const editing = target?.matches("input, textarea, [contenteditable='true']") ?? false;
+        const modifier = event.ctrlKey || event.metaKey;
+
+        if (modifier && event.key.toLowerCase() === "f") {
+            event.preventDefault();
+            document.querySelector<HTMLInputElement>('input[aria-label="Search"]')?.focus();
+            return;
+        }
+        if (editing) return;
+
+        if (event.key === "/" && !modifier) {
+            event.preventDefault();
+            document.querySelector<HTMLInputElement>('input[aria-label="Search"]')?.focus();
+        } else if (event.altKey && event.key === "ArrowLeft") {
+            event.preventDefault();
+            navigationStore.back();
+        } else if (event.altKey && event.key === "ArrowRight") {
+            event.preventDefault();
+            navigationStore.forward();
+        } else if (modifier && event.key.toLowerCase() === "l") {
+            event.preventDefault();
+            navigationStore.openLikedSongs();
+        } else if (modifier && event.shiftKey && event.key.toLowerCase() === "q") {
+            event.preventDefault();
+            playerStore.toggleExpanded();
+        } else if (event.code === "Space" || event.key === "MediaPlayPause") {
+            event.preventDefault();
+            run($playerStore.isPlaying ? spotifyStore.pause() : spotifyStore.play());
+        } else if (event.key === "MediaTrackNext" || (modifier && event.key === "ArrowRight")) {
+            event.preventDefault();
+            run(spotifyStore.next());
+        } else if (event.key === "MediaTrackPrevious" || (modifier && event.key === "ArrowLeft")) {
+            event.preventDefault();
+            run(spotifyStore.previous());
+        } else if (event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+            event.preventDefault();
+            const duration = $playerStore.currentTrack?.duration ?? 0;
+            const step = duration > 0 ? (10_000 / duration) * 100 : 0;
+            run(spotifyStore.seekToPercent($playerStore.progress + (event.key === "ArrowRight" ? step : -step)));
+        } else if (modifier && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+            event.preventDefault();
+            run(spotifyStore.setVolumePercent($playerStore.volume + (event.key === "ArrowUp" ? 5 : -5)));
+        } else if (event.key.toLowerCase() === "m") {
+            event.preventDefault();
+            if ($playerStore.volume > 0) volumeBeforeMute = $playerStore.volume;
+            run(spotifyStore.setVolumePercent($playerStore.volume > 0 ? 0 : volumeBeforeMute));
+        } else if (event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            run(spotifyStore.setShuffle(!$playerStore.shuffle));
+        } else if (event.key.toLowerCase() === "r") {
+            event.preventDefault();
+            const next = $playerStore.repeat === "off" ? "all" : $playerStore.repeat === "all" ? "one" : "off";
+            run(spotifyStore.setRepeat(next));
+        } else if (event.key.toLowerCase() === "l") {
+            event.preventDefault();
+            navigationStore.toggleLyrics();
+        } else if (event.key.toLowerCase() === "q") {
+            event.preventDefault();
+            playerStore.toggleExpanded();
+        } else if (modifier && event.key === ",") {
+            event.preventDefault();
+            navigationStore.openSettings();
+        } else if (modifier && event.key.toLowerCase() === "h") {
+            event.preventDefault();
+            navigationStore.goHome();
+        }
+    }
 </script>
+
+<svelte:window onkeydown={handleKeyboard} />
 
 <div class="app-shell h-screen bg-(--bg-primary)">
     <div class="app-container h-full flex flex-col">
@@ -88,6 +169,12 @@
                                     <SearchPage
                                         query={$navigationStore.searchQuery}
                                     />
+                                {:else if $navigationStore.page === "library"}
+                                    <LibraryPage />
+                                {:else if $navigationStore.page === "settings"}
+                                    <SettingsPage />
+                                {:else if $navigationStore.page === "entity" && $navigationStore.entityType && $navigationStore.entityId}
+                                    <EntityPage type={$navigationStore.entityType} id={$navigationStore.entityId} />
                                 {:else}
                                     <MadeForYou />
                                 {/if}

@@ -1,19 +1,16 @@
 import { get, writable } from 'svelte/store'
 import { playerStore } from '../playerStore'
 import type { Track } from '../playerStore'
+import { native } from '../../native'
 import { apiCall, apiGet, isInsufficientScopeError } from './api'
-import { DEFAULT_SCOPES, getClientId } from './config'
 import { fetchPlaybackOnceFactory } from './store/playback'
-import { ensureFreshTokenFactory, loadPersistedSession, persistTokens, safeLogout } from './store/auth'
+import { ensureFreshTokenFactory, safeLogout } from './store/auth'
 import { createPolling } from './store/polling'
 import { createLibrespotController } from './librespot'
 import { createPlayerCommands } from './store/playerCommands'
-import { mapToTrack } from './mappers'
 import {
   fetchAllPlaylists,
-  fetchRecentlyPlayedPlaylistContexts,
   fetchTopArtists,
-  fetchTopTracks,
   createPlaylist,
   getLikedSongsView,
   getPlaylistView,
@@ -22,43 +19,20 @@ import {
   renamePlaylist,
   uploadPlaylistCoverJpegBase64,
   addTracksToPlaylist,
+  removeTracksFromPlaylist,
+  unsaveFromLibrary,
   reorderPlaylistTrack,
   saveTracksToLiked,
-  searchTracks
 } from './store/library'
 import { initialSpotifyState, isUnauthorized, type SpotifyState } from './store/state'
 import type { SpotifyUser } from './types'
-import type { SpotifyQueue } from './types'
-import { bestImageUrl } from '../../utils/spotifyImages'
 
 function createSpotifyStore() {
   const { subscribe, set, update } = writable<SpotifyState>(initialSpotifyState)
 
   playerStore.setQueueSource('spotify')
 
-  let lastObserved:
-    | {
-        trackId: string | null
-        isPlaying: boolean
-        progressPct: number
-      }
-    | null = null
-
-  let lastKnownTrack: Track | null = null
-
-  let homeCache:
-    | null
-    | {
-        continuePlaylists: Array<{ id: string; name: string; images: { url: string }[] }>
-        topTracks: Array<{ id: string; name: string; image: string; uri: string; artist: string; album: string; albumArt: string; duration: number }>
-        topArtists: Array<{ id: string; name: string; image: string; uri: string }>
-        mixes: Array<{ id: string; name: string; image: string; uris: string[] }>
-      } = null
-
-  let homeSectionsInFlight: Promise<void> | null = null
-
   let stopAuthListener: null | (() => void) = null
-  let stopAuthErrorListener: null | (() => void) = null
 
   const storeLike = {
     getState: () => get({ subscribe }),
@@ -69,16 +43,13 @@ function createSpotifyStore() {
   const librespotController = createLibrespotController({
     getAccessToken: async () => ensureFreshToken(),
     onReady: () => {
-      console.log('Librespot device is ready')
       void (async () => {
         try {
           await librespotController.refreshDeviceId()
           const token = await ensureFreshToken()
           if (!token) return
           void ensureLibrespotIsActive(token)
-        } catch {
-          // ignore
-        }
+        } catch {}
       })()
     },
     onError: (message) => update((s) => ({ ...s, error: message })),
@@ -89,20 +60,12 @@ function createSpotifyStore() {
   const ensureFreshToken = ensureFreshTokenFactory({
     store: storeLike,
     stopPlaybackPolling,
-    webPlaybackDisconnect: () => librespotController.disconnect()
+    playbackDisconnect: () => librespotController.disconnect()
   })
 
   const fetchPlaybackOnce = fetchPlaybackOnceFactory({
     updateCurrent: (current) => update((s) => ({ ...s, current }))
   })
-
-  const fetchQueueOnce = async (token: string) => {
-    const queue = await apiGet<SpotifyQueue>(token, '/me/player/queue')
-    const nextItem = queue?.queue?.[0] ?? null
-    const nextTrack = nextItem ? mapToTrack(nextItem) : null
-    const queueTracks = (queue?.queue ?? []).slice(0, 20).map(mapToTrack)
-    playerStore.setSpotifyQueue({ next: nextTrack, queue: queueTracks })
-  }
 
   const polling = createPolling({
     fetchTick: async () => {
@@ -112,11 +75,7 @@ function createSpotifyStore() {
 
         await fetchPlaybackOnce(token)
 
-        const p = get(playerStore)
-        if (p.currentTrack) lastKnownTrack = p.currentTrack
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   })
 
@@ -131,8 +90,6 @@ function createSpotifyStore() {
   })
 
   let librespotEnsureInFlight: Promise<string | null> | null = null
-  let lastLibrespotAuthToken: string | null = null
-
   const ensureLibrespotIsActive = async (token: string) => {
     if (librespotEnsureInFlight) return await librespotEnsureInFlight
 
@@ -144,14 +101,6 @@ function createSpotifyStore() {
         )
         const active = (devicesRes.devices || []).find((d) => d.is_active && d.id)
         if (active?.id) return active.id
-
-        const status = await window.electron?.librespotStatus?.().catch(() => null)
-        const canAuth = !!(window.electron?.librespotAuth && status?.available)
-
-        if (canAuth && lastLibrespotAuthToken !== token) {
-          lastLibrespotAuthToken = token
-          await window.electron!.librespotAuth!(token)
-        }
 
         await librespotController.init()
 
@@ -179,7 +128,7 @@ function createSpotifyStore() {
 
   const doSafeLogout = (message?: string) =>
     safeLogout(
-      { store: storeLike, stopPlaybackPolling, webPlaybackDisconnect: () => librespotController.disconnect() },
+      { store: storeLike, stopPlaybackPolling, playbackDisconnect: () => librespotController.disconnect() },
       message
     )
 
@@ -204,7 +153,6 @@ function createSpotifyStore() {
         topArtists
       }))
 
-      homeCache = null
     } catch (e) {
       if (isUnauthorized(e)) {
         doSafeLogout('Spotify session expired. Please log in again.')
@@ -216,20 +164,28 @@ function createSpotifyStore() {
 
   const attachAuthListeners = () => {
     stopAuthListener?.()
-    stopAuthErrorListener?.()
-
-    stopAuthListener =
-      window.electron?.onSpotifyAuth?.((tokens) => {
-        persistTokens(storeLike, tokens)
-        void ensureLibrespotIsActive(tokens.accessToken)
+    stopAuthListener = native.onAuthState((state) => {
+      if (state.state === 'signedIn') {
+        update((current) => ({ ...current, status: 'authenticated', accessToken: 'native', error: null }))
         void fetchAll()
         polling.start()
-      }) ?? null
+      } else if (state.state === 'failed') {
+        update((current) => ({ ...current, status: 'idle', error: state.message }))
+      } else if (state.state === 'signedOut') {
+        doSafeLogout()
+      }
+    })
+  }
 
-    stopAuthErrorListener =
-      window.electron?.onSpotifyAuthError?.((err) => {
-        update((s) => ({ ...s, status: 'idle', error: err.message }))
-      }) ?? null
+  const refreshPlaylists = async () => {
+    const token = await ensureFreshToken()
+    if (!token) return
+    try {
+      const playlists = await fetchAllPlaylists(token)
+      update((state) => ({ ...state, playlists }))
+    } catch {
+      update((state) => ({ ...state, error: 'Could not refresh playlists' }))
+    }
   }
 
   return {
@@ -237,10 +193,6 @@ function createSpotifyStore() {
 
     getLibrespotDeviceId() {
       return librespotController.getDeviceId()
-    },
-
-    async initLibrespot() {
-      await librespotController.init()
     },
 
     init() {
@@ -256,21 +208,12 @@ function createSpotifyStore() {
         }
       } catch {}
 
-      const sess = loadPersistedSession(storeLike)
-      if (!sess.accessToken) return
-
-      update((s) => ({
-        ...s,
-        status: 'authenticated',
-        accessToken: sess.accessToken,
-        refreshToken: sess.refreshToken,
-        expiresAt: sess.expiresAt
-      }))
-
       void (async () => {
         try {
-          const token = await ensureFreshToken()
-          if (!token) return
+          const auth = await native.authStatus()
+          if (auth.state !== 'signedIn') return
+          update((current) => ({ ...current, status: 'authenticated', accessToken: 'native' }))
+          const token = 'native'
           void ensureLibrespotIsActive(token)
           await fetchAll()
           polling.start()
@@ -284,31 +227,14 @@ function createSpotifyStore() {
       attachAuthListeners()
       update((s) => ({ ...s, status: 'authenticating', error: null }))
 
-      const clientId = getClientId()
-      const scopes = DEFAULT_SCOPES
-
-      if (!window.electron?.spotifyLogin) {
-        update((s) => ({ ...s, status: 'idle', error: 'Electron bridge not available' }))
-        return
-      }
-
-      await window.electron.spotifyLogin({ clientId, scopes })
+      await native.signIn()
     },
 
     async refresh() {
       await ensureFreshToken()
     },
 
-    async refreshPlaylists() {
-      const token = await ensureFreshToken()
-      if (!token) return
-      try {
-        const playlists = await fetchAllPlaylists(token)
-        update((s) => ({ ...s, playlists: playlists || [] }))
-      } catch {
-        // ignore
-      }
-    },
+    refreshPlaylists,
 
     async createPlaylist(name: string) {
       const token = await ensureFreshToken()
@@ -318,7 +244,7 @@ function createSpotifyStore() {
       if (!userId) throw new Error('Missing Spotify user')
 
       const created = await createPlaylist(token, { userId, name })
-      await (this as any).refreshPlaylists()
+      await refreshPlaylists()
       return created
     },
 
@@ -326,14 +252,14 @@ function createSpotifyStore() {
       const token = await ensureFreshToken()
       if (!token) throw new Error('Not authenticated')
       await renamePlaylist(token, { playlistId, name })
-      await (this as any).refreshPlaylists()
+      await refreshPlaylists()
     },
 
     async setPlaylistCoverJpegBase64(playlistId: string, jpegBase64: string) {
       const token = await ensureFreshToken()
       if (!token) throw new Error('Not authenticated')
       await uploadPlaylistCoverJpegBase64(token, { playlistId, jpegBase64 })
-      await (this as any).refreshPlaylists()
+      await refreshPlaylists()
     },
 
     async addTrackToLiked(trackId: string) {
@@ -354,6 +280,18 @@ function createSpotifyStore() {
       await addTracksToPlaylist(token, { playlistId, uris: [uri] })
     },
 
+    async removeTrackFromPlaylist(playlistId: string, uri: string, snapshotId?: string | null) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      return await removeTracksFromPlaylist(token, { playlistId, uris: [uri], snapshotId })
+    },
+
+    async unsaveUri(uri: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      await unsaveFromLibrary(token, [uri])
+    },
+
     async isTrackInPlaylist(playlistId: string, uri: string) {
       const token = await ensureFreshToken()
       if (!token) throw new Error('Not authenticated')
@@ -366,175 +304,14 @@ function createSpotifyStore() {
       return await reorderPlaylistTrack(token, { playlistId, fromIndex, toIndex, snapshotId })
     },
 
-    async getHomeSections() {
-      const token = await ensureFreshToken()
-      if (!token) throw new Error('Not authenticated')
-
-      const state = get({ subscribe })
-      const yourPlaylists = (state.playlists || []).slice(0, 12)
-      const fallbackTopArtists = (state.topArtists || [])
-        .slice(0, 10)
-        .map((a) => ({
-          id: a.id,
-          name: a.name,
-          image: bestImageUrl(a.images || []),
-          uri: `spotify:artist:${a.id}`
-        }))
-        .filter((a) => a.id && a.name)
-
-      const buildFromCache = (cache: NonNullable<typeof homeCache>) =>
-        [
-          {
-            id: 'continue',
-            name: 'Continue listening',
-            cards: cache.continuePlaylists.map((p) => ({
-              id: p.id,
-              name: p.name,
-              image: bestImageUrl(p.images || []),
-              kind: 'playlist',
-              uri: `spotify:playlist:${p.id}`
-            }))
-          },
-          {
-            id: 'your_playlists',
-            name: 'Your playlists',
-            cards: yourPlaylists.map((p) => ({
-              id: p.id,
-              name: p.name,
-              image: bestImageUrl(p.images || []),
-              kind: 'playlist',
-              uri: `spotify:playlist:${p.id}`
-            }))
-          },
-          {
-            id: 'top_tracks',
-            name: 'Your top tracks',
-            cards: cache.topTracks.map((t) => ({
-              id: t.id,
-              name: t.name,
-              image: t.image,
-              kind: 'track',
-              uri: t.uri
-            }))
-          },
-          {
-            id: 'top_artists',
-            name: 'Your top artists',
-            cards: cache.topArtists.map((a) => ({
-              id: a.id,
-              name: a.name,
-              image: a.image,
-              kind: 'artist',
-              uri: a.uri
-            }))
-          },
-          {
-            id: 'mixes',
-            name: 'Muffle Mixes',
-            cards: cache.mixes.map((m) => ({
-              id: m.id,
-              name: m.name,
-              image: m.image,
-              kind: 'mix'
-            }))
-          }
-        ].filter((s) => (s.cards || []).length)
-
-      if (homeCache) return buildFromCache(homeCache)
-
-      if (!homeSectionsInFlight) {
-        homeSectionsInFlight = (async () => {
-          try {
-            const playlists = (state.playlists || []).slice(0, 24)
-
-            const [recentIdsRes, topTracksRes] = await Promise.allSettled([
-              fetchRecentlyPlayedPlaylistContexts(token, 50),
-              fetchTopTracks(token, 12)
-            ])
-
-            const recentIds = recentIdsRes.status === 'fulfilled' ? recentIdsRes.value || [] : []
-            const topTracks =
-              topTracksRes.status === 'fulfilled'
-                ? (topTracksRes.value || []).map((t) => ({
-                    id: t.id,
-                    name: t.name,
-                    image: t.albumArt,
-                    uri: t.uri,
-                    artist: t.artist,
-                    album: t.album,
-                    albumArt: t.albumArt,
-                    duration: t.duration
-                  }))
-                : []
-
-            const continuePlaylists = recentIds
-              .map((id) => playlists.find((p) => p.id === id))
-              .filter(Boolean)
-              .slice(0, 12) as any
-
-            const topArtists = fallbackTopArtists
-
-            const mixes: Array<{ id: string; name: string; image: string; uris: string[] }> = []
-
-            homeCache = {
-              continuePlaylists: continuePlaylists.map((p: any) => ({ id: p.id, name: p.name, images: p.images })),
-              topTracks,
-              topArtists,
-              mixes
-            }
-          } catch {
-            homeCache = {
-              continuePlaylists: [],
-              topTracks: [],
-              topArtists: fallbackTopArtists,
-              mixes: []
-            }
-          } finally {
-            homeSectionsInFlight = null
-          }
-        })()
-      }
-
-      try {
-        await homeSectionsInFlight
-      } catch {
-        // ignore
-      }
-
-      if (homeCache) return buildFromCache(homeCache)
-
-      return [
-        {
-          id: 'your_playlists',
-          name: 'Your playlists',
-          cards: yourPlaylists.map((p) => ({
-            id: p.id,
-            name: p.name,
-            image: bestImageUrl(p.images || []),
-            kind: 'playlist',
-            uri: `spotify:playlist:${p.id}`
-          }))
-        },
-        {
-          id: 'top_artists',
-          name: 'Your top artists',
-          cards: fallbackTopArtists.map((a) => ({ id: a.id, name: a.name, image: a.image, kind: 'artist', uri: a.uri }))
-        }
-      ].filter((s) => (s.cards || []).length)
-    },
-
-    async playMix(mixId: string) {
-      const token = await ensureFreshToken()
-      if (!token) return
-      const mix = homeCache?.mixes?.find((m) => m.id === mixId)
-      if (!mix?.uris?.length) return
-
-      await (this as any).playUris(mix.uris)
-    },
-
     async ensureLibrespotReady() {
       await librespotController.init()
-      const deviceId = await librespotController.refreshDeviceId()
+      let deviceId = await librespotController.refreshDeviceId()
+
+      if (!deviceId) {
+        await librespotController.authorize()
+        deviceId = await librespotController.refreshDeviceId()
+      }
 
       if (deviceId) {
         const token = await ensureFreshToken()
@@ -545,12 +322,6 @@ function createSpotifyStore() {
       }
 
       return { deviceId, status: librespotController.getStatus() }
-    },
-
-    async refreshPlayback() {
-      const token = await ensureFreshToken()
-      if (!token) return
-      await fetchPlaybackOnce(token)
     },
 
     ...commands,
@@ -580,22 +351,12 @@ function createSpotifyStore() {
     },
 
 
-    reorderQueue(_fromIndex: number, _toIndex: number) {
-      // Spotify queue cannot be reordered via API.
-    },
-
     async next() {
       await commands.next()
     },
 
     async previous() {
       await commands.previous()
-    },
-
-    async searchTracks(query: string) {
-      const token = await ensureFreshToken()
-      if (!token) return []
-      return await searchTracks(token, query)
     },
 
     async getPlaylistView(playlistId: string) {
@@ -619,7 +380,8 @@ function createSpotifyStore() {
       }
     },
 
-    logout() {
+    async logout() {
+      await native.signOut()
       doSafeLogout(undefined)
     }
   }

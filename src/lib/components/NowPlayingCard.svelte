@@ -3,35 +3,46 @@
     import { playerStore } from "../stores/playerStore";
     import { spotifyStore, type SpotifyDevice } from "../stores/spotify";
     import { navigationStore } from "../stores/navigationStore";
+    import { native, type SpotifyReceiver } from "../native";
     import AddToPlaylistModal from "./AddToPlaylistModal.svelte";
 
-    let seeking = false;
-    let seekValue = 0;
-    let seekEl: HTMLInputElement | null = null;
+    let seeking = $state(false);
+    let seekValue = $state(0);
+    let seekEl = $state<HTMLInputElement | null>(null);
 
-    let showDevices = false;
-    let devices: SpotifyDevice[] = [];
-    let loadingDevices = false;
+    let showDevices = $state(false);
+    let devices = $state.raw<SpotifyDevice[]>([]);
+    let receivers = $state.raw<SpotifyReceiver[]>([]);
+    let loadingDevices = $state(false);
+    let activatingReceiver = $state<string | null>(null);
 
-    let volumeChanging = false;
-    let volumeValue = 0;
-    let volumeEl: HTMLInputElement | null = null;
+    let volumeChanging = $state(false);
+    let volumeValue = $state(0);
+    let volumeEl = $state<HTMLInputElement | null>(null);
 
-    let addOpen = false;
-    let addTrack: {
+    let addOpen = $state(false);
+    let addTrack = $state.raw<{
         id: string;
         uri: string;
         name: string;
         artist: string;
         albumArt: string;
-    } | null = null;
+    } | null>(null);
 
-    $: librespotBlocking =
+    const librespotBlocking = $derived(
         $spotifyStore.librespot.available &&
-        $spotifyStore.librespot.status === "starting";
+        $spotifyStore.librespot.status === "starting",
+    );
 
-    $: if (!seeking) seekValue = $playerStore.progress;
-    $: if (!volumeChanging) volumeValue = $playerStore.volume;
+    $effect(() => {
+        if (!seeking) seekValue = $playerStore.progress;
+        if (seekEl) seekEl.style.setProperty("--seek-percent", `${Math.max(0, Math.min(100, seekValue))}%`);
+    });
+
+    $effect(() => {
+        if (!volumeChanging) volumeValue = $playerStore.volume;
+        if (volumeEl) volumeEl.style.setProperty("--seek-percent", `${Math.max(0, Math.min(100, volumeValue))}%`);
+    });
 
     async function togglePlayback() {
         try {
@@ -97,12 +108,33 @@
         loadingDevices = true;
         try {
             await spotifyStore.ensureLibrespotReady().catch(() => {});
-            devices = await spotifyStore.getDevices();
+            const [known, nearby] = await Promise.allSettled([
+                spotifyStore.getDevices(),
+                native.discoverReceivers(),
+            ]);
+            devices = known.status === "fulfilled" ? known.value : [];
+            receivers = nearby.status === "fulfilled" ? nearby.value : [];
         } catch (e) {
             console.error("Get devices failed:", e);
             devices = [];
+            receivers = [];
         } finally {
             loadingDevices = false;
+        }
+    }
+
+    async function activate(receiver: SpotifyReceiver) {
+        const key = `${receiver.address}:${receiver.port}`;
+        activatingReceiver = key;
+        try {
+            await native.activateReceiver(receiver);
+            await new Promise((resolve) => window.setTimeout(resolve, 1200));
+            devices = await spotifyStore.getDevices();
+            receivers = receivers.filter((item) => `${item.address}:${item.port}` !== key);
+        } catch (e) {
+            console.error("Receiver activation failed:", e);
+        } finally {
+            activatingReceiver = null;
         }
     }
 
@@ -124,6 +156,12 @@
         } catch (e) {
             console.error("Shuffle toggle failed:", e);
         }
+    }
+
+    async function cycleRepeat() {
+        const modes = ["off", "all", "one"] as const;
+        const current = get(playerStore).repeat;
+        await spotifyStore.setRepeat(modes[(modes.indexOf(current) + 1) % modes.length]);
     }
 
     function openAddForCurrent(e?: MouseEvent) {
@@ -148,20 +186,6 @@
         navigationStore.toggleLyrics();
     }
 
-    $: if (seekEl) {
-        // Always set (including 0), otherwise the gradient can stick at the previous track's value.
-        seekEl.style.setProperty(
-            "--seek-percent",
-            `${Math.max(0, Math.min(100, seekValue))}%`,
-        );
-    }
-
-    $: if (volumeEl) {
-        volumeEl.style.setProperty(
-            "--seek-percent",
-            `${Math.max(0, Math.min(100, volumeValue))}%`,
-        );
-    }
 </script>
 
 <div
@@ -295,7 +319,7 @@
                                     <p
                                         class="text-white/60 text-xs font-semibold px-2 pb-2"
                                     >
-                                        DEVICES
+                                        Choose a speaker
                                     </p>
 
                                     {#if loadingDevices}
@@ -304,7 +328,7 @@
                                         >
                                             Loading…
                                         </div>
-                                    {:else if devices.length === 0}
+                                    {:else if devices.length === 0 && receivers.length === 0}
                                         <div
                                             class="px-2 py-2 text-white/50 text-sm"
                                         >
@@ -335,6 +359,19 @@
                                                             class="w-2 h-2 rounded-full bg-(--accent-primary)"
                                                         ></div>
                                                     {/if}
+                                                </button>
+                                            {/each}
+                                            {#each receivers as receiver (`${receiver.address}:${receiver.port}`)}
+                                                <button
+                                                    class="px-2 py-2 rounded-2xl hover:bg-white/10 text-left flex items-center justify-between gap-3"
+                                                    onclick={() => activate(receiver)}
+                                                    disabled={activatingReceiver !== null}
+                                                >
+                                                    <div class="min-w-0">
+                                                        <div class="text-white text-sm font-semibold truncate">{receiver.name}</div>
+                                                        <div class="text-white/50 text-xs truncate">Nearby Connect receiver</div>
+                                                    </div>
+                                                    <span class="text-white/55 text-xs">{activatingReceiver === `${receiver.address}:${receiver.port}` ? "Connecting…" : "Connect"}</span>
                                                 </button>
                                             {/each}
                                         </div>
@@ -396,6 +433,19 @@
                                     stroke-linejoin="round"
                                 />
                             </svg>
+                        </button>
+
+                        <button
+                            class="relative w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center bouncy-btn"
+                            onclick={cycleRepeat}
+                            aria-label={`Repeat: ${$playerStore.repeat}`}
+                            title={`Repeat: ${$playerStore.repeat}`}
+                            disabled={librespotBlocking}
+                        >
+                            <svg class={$playerStore.repeat === "off" ? "text-white/35" : "text-white"} width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            {#if $playerStore.repeat === "one"}<span class="absolute text-[8px] font-bold">1</span>{/if}
                         </button>
 
                         <button

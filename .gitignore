@@ -1,12 +1,11 @@
 node_modules/
 dist/
-dist-electron/
 release/
+bundle/
+.svelte-check/
+desktop/target/
 .env
 .env.local
 *.log
 .DS_Store
 Thumbs.db
-bun.lock
-resources/librespot/librespot.exe
-resources/librespot/librespot

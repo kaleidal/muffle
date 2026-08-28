@@ -468,6 +468,10 @@ function createPlayerStore() {
       });
     },
 
+    setRepeat(repeat: RepeatMode) {
+      update((state) => ({ ...state, repeat }));
+    },
+
     playTrack(track: Track) {
       update((state) => ({
         ...state,

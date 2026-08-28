@@ -1,117 +1,77 @@
-# 🎵 Muffle
+# Muffle
 
-A beautiful, fluid Spotify desktop client built with Svelte, Electron, and Tailwind CSS.
+Muffle is a fast, expressive Spotify desktop client built with Svelte and Sabine. It talks to Spotify directly from its Rust host and plays audio through an embedded librespot engine, so there is no Electron process, browser token storage, Web Playback SDK, or sidecar executable.
 
-![Muffle Preview](preview.png)
+![Muffle](preview.png)
 
-## ✨ Features
+## What it includes
 
-- **Fluid Animations** - Bouncy, liquid-like transitions inspired by Apple's design language
-- **Modern UI** - Bubbly, rounded design that's easy on the eyes
-- **Next Track Preview** - See what's coming up ~30 seconds before the current song ends
-- **Smooth Song Transitions** - Satisfying "reverb" animation when tracks change
-- **Native Desktop Experience** - Runs natively on Windows, macOS, and Linux
+- Home recommendations, mixes, recently played music, releases, artists, podcasts, and personal playlists
+- Search across tracks, artists, albums, playlists, shows, and episodes
+- Full library views for saved music, followed artists, playlists, and podcasts
+- Artist, album, show, playlist, and Liked Songs pages
+- Local high-quality playback with gapless playback, autoplay, normalisation, repeat, shuffle, queue control, audio caching, and Spotify Connect device transfer
+- Native OAuth with PKCE, system media controls on Linux, single-instance handling, tray behaviour, and native playlist cover selection
+- Keyboard media controls and shortcuts for search, volume, seeking, shuffle, repeat, lyrics, queue, home, and settings
 
-## 🚀 Getting Started
+## Development
 
-### Prerequisites
+Requirements:
 
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- [Bun](https://bun.sh/) (recommended) or npm
-- A Spotify Premium account (required for playback SDK)
+- Bun 1.3 or newer
+- Rust 1.95 or newer
+- The platform prerequisites listed by [Sabine](https://github.com/Lantharos/Sabine)
+- A Spotify Premium account for local playback
 
-### Installation
+Install and check the project:
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/muffle.git
-cd muffle
-```
-
-2. Install dependencies:
 ```bash
 bun install
+bun run check
+cargo check --manifest-path desktop/Cargo.toml
 ```
 
-3. Set up Spotify API credentials:
-   - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-   - Create a new app
-   - Add `http://localhost:5173/callback` to Redirect URIs
-   - Copy your Client ID
-   - Update `src/lib/stores/spotifyStore.js` with your Client ID:
-   ```js
-   const SPOTIFY_CLIENT_ID = 'your_client_id_here'
-   ```
-
-4. Start the development server:
-```bash
-bun run electron:dev
-```
-
-### Building for Production
+Run the desktop development workflow:
 
 ```bash
-bun run electron:build
+bun run desktop
 ```
 
-This will create installable packages in the `release/` folder.
+Build the web bundle or native installers:
 
-## 🎨 Design Philosophy
-
-Muffle was designed to fix what we feel is wrong with the official Spotify client:
-
-1. **Performance** - Built with Svelte for minimal overhead and maximum speed
-2. **Aesthetics** - Rounded corners, subtle shadows, and fluid animations
-3. **Delight** - Small touches like the bouncy buttons and the reverb animation make using the app enjoyable
-
-## 🛠️ Tech Stack
-
-- **[Svelte 5](https://svelte.dev/)** - Reactive UI framework
-- **[Electron](https://www.electronjs.org/)** - Desktop app framework
-- **[Tailwind CSS v4](https://tailwindcss.com/)** - Utility-first CSS
-- **[Vite](https://vitejs.dev/)** - Build tool
-- **[Spotify Web Playback SDK](https://developer.spotify.com/documentation/web-playback-sdk)** - Music playback
-
-## 📁 Project Structure
-
-```
-muffle/
-├── electron/
-│   ├── main.js         # Electron main process
-│   └── preload.js      # Preload script for IPC
-├── src/
-│   ├── lib/
-│   │   ├── components/ # Svelte components
-│   │   └── stores/     # Svelte stores (state management)
-│   ├── App.svelte      # Root component
-│   ├── app.css         # Global styles & animations
-│   └── main.js         # App entry point
-├── index.html
-├── package.json
-├── svelte.config.js
-└── vite.config.js
+```bash
+bun run build
+bun run bundle
 ```
 
-## 🎵 Key Animations
+## Spotify authorization
 
-### Fluid Card Hover
-Cards lift and scale with a spring-bounce easing for a tactile feel.
+Muffle uses two native PKCE grants. The Web API grant provides the library, recommendations, search, and remote-control surfaces. The playback grant authorizes the embedded Connect player. Tokens and reusable playback credentials remain in the operating system's per-user application directories.
 
-### Song Transition Reverb
-When a new song starts, the player "reverbs" with a ripple effect.
+The shared Web API application works by default. To use your own Spotify application, add this redirect URI in the Spotify developer dashboard and enter its client ID in Muffle's settings:
 
-### Next Track Preview
-About 30 seconds before a song ends, the next track's album art slides in from the left.
+```text
+http://127.0.0.1:8989/login
+```
 
-### Equalizer Animation
-A mini equalizer pulses when music is playing.
+Local playback uses:
 
-## 📝 License
+```text
+http://127.0.0.1:8898/login
+```
 
-MIT
+Spotify requires an explicit loopback IP for desktop callback URLs. No client secret is used or stored.
 
-## 🙏 Acknowledgments
+## Project structure
 
-- Spotify for the amazing API and SDK
-- The Svelte team for an incredible framework
-- Electron team for making cross-platform apps possible
+```text
+desktop/                    Rust host, OAuth, Spotify transport, playback, MPRIS
+src/lib/components/         Muffle's Svelte interface
+src/lib/stores/spotify/     UI state and Spotify feature models
+src/lib/native.ts           Typed Sabine bridge
+Sabine.toml                 Desktop and bundling configuration
+```
+
+Tagged releases are built by the Sabine release workflow for the supported desktop platforms.
+
+Third-party attribution is recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

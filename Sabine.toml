@@ -1,0 +1,13 @@
+[app]
+id = "al.kaleid.muffle"
+name = "Muffle"
+version = "1.0.0"
+icon = "public/icon.png"
+cargo_manifest = "desktop/Cargo.toml"
+
+[web]
+root = "."
+dist = "dist"
+entry = "dist/index.html"
+dev_port = 5173
+build = "bun run build:web"

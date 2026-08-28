@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { spotifyStore } from '../stores/spotify'
+  import { navigationStore } from '../stores/navigationStore'
+  import { native } from '../native'
 
-  let open = false
-  let anchorEl: HTMLButtonElement | null = null
-  let menuEl: HTMLDivElement | null = null
+  let open = $state(false)
+  let anchorEl = $state<HTMLButtonElement | null>(null)
+  let menuEl = $state<HTMLDivElement | null>(null)
+  const showWindowControls = !/Mac/i.test(navigator.platform)
 
   const close = () => {
     open = false
@@ -15,7 +18,7 @@
   }
 
   const openAccount = () => {
-    window.open('https://www.spotify.com/account/', '_blank', 'noopener,noreferrer')
+    void native.openExternal('https://www.spotify.com/account/')
     close()
   }
 
@@ -75,10 +78,12 @@
             class="absolute left-0 mt-2 w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-50"
             bind:this={menuEl}
           >
-            <p class="text-white/60 text-xs font-semibold px-2 pb-2">ACCOUNT</p>
             <button
               class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold transition-colors"
-              onclick={close}
+              onclick={() => {
+                navigationStore.openSettings()
+                close()
+              }}
               aria-label="Settings"
             >
               Settings
@@ -114,4 +119,26 @@
       </button>
     {/if}
   </div>
+
+  {#if showWindowControls}
+  <div class="window-controls no-drag" aria-label="Window controls">
+    <button onclick={() => native.window.minimize()} aria-label="Minimize window">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8" /></svg>
+    </button>
+    <button onclick={() => native.window.toggleMaximize()} aria-label="Maximize window">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1" /></svg>
+    </button>
+    <button class="close-window" onclick={() => native.window.close()} aria-label="Close window">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 3 6 6M9 3 3 9" /></svg>
+    </button>
+  </div>
+  {/if}
 </div>
+
+<style>
+  .window-controls { display: flex; align-items: center; align-self: stretch; margin-right: -.5rem; margin-top: -1rem; }
+  .window-controls button { display: grid; place-items: center; width: 2.8rem; height: 2.4rem; color: rgba(255,255,255,.55); transition: color .16s ease, background .16s ease; }
+  .window-controls button:hover { color: white; background: rgba(255,255,255,.08); }
+  .window-controls button.close-window:hover { background: #c84343; }
+  .window-controls svg { width: .85rem; fill: none; stroke: currentColor; stroke-width: 1.35; }
+</style>

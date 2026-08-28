@@ -6,8 +6,9 @@
     import { playerStore } from "../stores/playerStore";
     import { bestImageUrl } from "../utils/spotifyImages";
     import TextPromptModal from "./TextPromptModal.svelte";
+    import { native } from "../native";
 
-    export let playlistId: string;
+    let { playlistId }: { playlistId: string } = $props();
 
     type PlaylistTrack = {
         id: string;
@@ -23,28 +24,28 @@
         id: string;
         name: string;
         ownerName: string;
+        ownerId: string | null;
         image: string;
         uri: string;
         snapshotId: string | null;
         tracks: PlaylistTrack[];
     };
 
-    let loading = true;
-    let error: string | null = null;
-    let data: PlaylistView | null = null;
+    let loading = $state(true);
+    let error = $state<string | null>(null);
+    let data = $state.raw<PlaylistView | null>(null);
 
-    let coverInput: HTMLInputElement | null = null;
-    let busy = false;
-    let playLoading = false;
+    let busy = $state(false);
+    let playLoading = $state(false);
 
-    let renameOpen = false;
-    let renameError: string | null = null;
+    let renameOpen = $state(false);
+    let renameError = $state<string | null>(null);
 
-    let menu: null | {
+    let menu = $state.raw<null | {
         x: number;
         y: number;
         track: PlaylistTrack;
-    } = null;
+    }>(null);
 
     const closeMenu = () => {
         menu = null;
@@ -83,9 +84,10 @@
                 id: res.id,
                 name: res.name,
                 ownerName: res.ownerName,
+                ownerId: res.ownerId ?? null,
                 image: bestImageUrl(res.images),
                 uri: res.uri,
-                snapshotId: (res as any).snapshotId ?? null,
+                snapshotId: res.snapshotId ?? null,
                 tracks: res.tracks,
             };
         } catch (e: any) {
@@ -95,9 +97,9 @@
         }
     };
 
-    $: if (playlistId) {
-        void load();
-    }
+    $effect(() => {
+        if (playlistId) void load();
+    });
 
     async function playAt(position: number) {
         if (!data) return;
@@ -165,32 +167,18 @@
         }
     };
 
-    const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-        const bytes = new Uint8Array(buffer);
-        let binary = "";
-        for (let i = 0; i < bytes.length; i++)
-            binary += String.fromCharCode(bytes[i]);
-        return btoa(binary);
-    };
-
-    async function onCoverSelected(file: File | null) {
-        if (!file || !data || playlistId === "liked") return;
-        if (file.type !== "image/jpeg") {
-            console.error("Cover must be a JPEG image");
-            return;
-        }
-
+    async function chooseCover() {
+        if (!data || playlistId === "liked") return;
         busy = true;
         try {
-            const buf = await file.arrayBuffer();
-            const jpegBase64 = arrayBufferToBase64(buf);
+            const jpegBase64 = await native.pickPlaylistCover();
+            if (!jpegBase64) return;
             await spotifyStore.setPlaylistCoverJpegBase64(data.id, jpegBase64);
             await load();
         } catch (e) {
             console.error("Set playlist cover failed:", e);
         } finally {
             busy = false;
-            if (coverInput) coverInput.value = "";
         }
     }
 
@@ -242,6 +230,28 @@
         e.preventDefault();
         e.stopPropagation();
         menu = { x: e.clientX, y: e.clientY, track: t };
+    }
+
+    async function removeSelectedTrack() {
+        if (!data || !menu?.track) return;
+        const track = menu.track;
+        menu = null;
+        busy = true;
+        try {
+            if (playlistId === "liked") {
+                await spotifyStore.unsaveUri(track.uri);
+            } else {
+                const snapshot = await spotifyStore.removeTrackFromPlaylist(
+                    data.id,
+                    track.uri,
+                    data.snapshotId,
+                );
+                if (snapshot) data.snapshotId = snapshot;
+            }
+            await load();
+        } finally {
+            busy = false;
+        }
     }
 </script>
 
@@ -385,7 +395,7 @@
                             <button
                                 class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center bouncy-btn shrink-0"
                                 aria-label="Change cover"
-                                onclick={() => coverInput?.click()}
+                                onclick={chooseCover}
                                 disabled={busy}
                                 title="Change cover (JPEG)"
                             >
@@ -407,17 +417,6 @@
                 </p>
             </div>
         </div>
-
-        <input
-            bind:this={coverInput}
-            type="file"
-            accept="image/jpeg"
-            class="hidden"
-            onchange={(e) => {
-                const files = (e.currentTarget as HTMLInputElement).files;
-                void onCoverSelected(files && files.length ? files[0] : null);
-            }}
-        />
 
         <div class="mt-6 flex-1 min-h-0 overflow-y-auto scrollbar-hide">
             <div class="flex flex-col">
@@ -563,27 +562,32 @@
                         if (e.key === "Escape") menu = null;
                     }}
                 >
-                    <p class="text-white/60 text-xs font-semibold px-2 pb-2">
-                        QUEUE
-                    </p>
                     <div
                         class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn cursor-pointer"
                         role="menuitem"
                         tabindex="0"
                         onclick={() => {
                             const track = menu?.track;
-                            if (track) spotifyStore.enqueueTrack(track as any);
+                            if (track) spotifyStore.enqueueTrack(track);
                             menu = null;
                         }}
                         onkeydown={(e) => {
                             if (e.key !== "Enter" && e.key !== " ") return;
                             const track = menu?.track;
-                            if (track) spotifyStore.enqueueTrack(track as any);
+                            if (track) spotifyStore.enqueueTrack(track);
                             menu = null;
                         }}
                     >
                         Add to queue
                     </div>
+                    {#if playlistId === "liked" || data.ownerId === $spotifyStore.user?.id}
+                        <button
+                            class="w-full mt-2 text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn"
+                            onclick={removeSelectedTrack}
+                        >
+                            {playlistId === "liked" ? "Remove from Liked Songs" : "Remove from playlist"}
+                        </button>
+                    {/if}
                 </div>
             </div>
         {/if}

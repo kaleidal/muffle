@@ -11,7 +11,6 @@ export type SpotifyState = {
   expiresAt: number | null
   user: SpotifyUser | null
   playlists: SpotifyPlaylist[]
-  featuredPlaylists: SpotifyPlaylist[]
   topArtists: SpotifyArtist[]
   current: SpotifyCurrentlyPlaying | null
   librespot: { status: LibrespotStatus; available: boolean }
@@ -25,7 +24,6 @@ export const initialSpotifyState: SpotifyState = {
   expiresAt: null,
   user: null,
   playlists: [],
-  featuredPlaylists: [],
   topArtists: [],
   current: null,
   librespot: { status: 'unavailable', available: false }

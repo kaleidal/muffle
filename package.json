@@ -1,85 +1,43 @@
 {
   "name": "muffle",
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "bun@1.3.14",
   "author": {
     "name": "Kaleidal",
     "email": "hello@kaleid.al"
   },
-  "main": "electron/main.cjs",
-  "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.0.3",
-    "@tailwindcss/vite": "^4.0.0",
-    "@types/node": "^25.0.3",
-    "autoprefixer": "^10.4.20",
-    "concurrently": "^9.1.2",
-    "electron": "^39.2.7",
-    "electron-builder": "^25.1.8",
-    "postcss": "^8.4.49",
-    "sharp": "^0.34.5",
-    "svelte": "^5.16.1",
-    "tailwindcss": "^4.0.0",
-    "typescript": "^5.9.3",
-    "vite": "^6.0.6",
-    "vite-plugin-electron": "^0.28.8",
-    "vite-plugin-electron-renderer": "^0.14.6",
-    "wait-on": "^8.0.1"
-  },
-  "build": {
-    "appId": "al.kaleid.muffle",
-    "productName": "Muffle",
-    "directories": {
-      "output": "release"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "kaleidal",
-      "repo": "muffle"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "resources/librespot",
-        "to": "librespot",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "public/icon.png"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "public/icon.png",
-      "hardenedRuntime": true
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "public/icon.png"
-    }
-  },
-  "description": "A beautiful, fluid Spotify desktop client",
+  "description": "A fast, expressive Spotify desktop client",
   "homepage": "https://muffle.kaleid.al",
-  "keywords": [
-    "spotify",
-    "music",
-    "electron",
-    "svelte"
-  ],
+  "keywords": ["spotify", "music", "sabine", "svelte"],
   "license": "MIT",
+  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && electron-builder",
+    "dev": "vite --host 127.0.0.1",
+    "desktop": "sabine dev .",
+    "build": "bun run check && bun run build:web",
+    "build:web": "vite build",
+    "bundle": "sabine bundle . --release --out bundle",
+    "check": "svelte-check --tsconfig ./tsconfig.json --tsgo",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "dist": "vite build && electron-builder"
+    "dist": "bun run bundle"
   },
-  "trustedDependencies": [
-    "electron"
-  ],
-  "type": "module"
+  "dependencies": {
+    "@lantharos/sabine": "git+https://github.com/Lantharos/Sabine.git#v0.1.20"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "@types/node": "26.4.0",
+    "autoprefixer": "10.5.4",
+    "postcss": "8.5.26",
+    "sharp": "0.35.4",
+    "svelte": "5.56.10",
+    "svelte-check": "4.7.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vite": "8.2.2"
+  },
+  "trustedDependencies": ["sharp"]
 }

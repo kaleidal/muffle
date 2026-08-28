@@ -1,80 +1,120 @@
 import { writable } from 'svelte/store'
 
-export type PageName = 'home' | 'playlist' | 'search' | 'lyrics'
+export type PageName = 'home' | 'playlist' | 'search' | 'lyrics' | 'library' | 'settings' | 'entity'
+export type EntityType = 'artist' | 'album' | 'show'
 
 export type NavigationState = {
   page: PageName
   playlistId: string | null
   searchQuery: string
+  entityType: EntityType | null
+  entityId: string | null
+}
+
+const initial: NavigationState = {
+  page: 'home',
+  playlistId: null,
+  searchQuery: '',
+  entityType: null,
+  entityId: null,
 }
 
 function createNavigationStore() {
-  const { subscribe, update } = writable<NavigationState>({
-    page: 'home',
-    playlistId: null,
-    searchQuery: ''
-  })
-
+  const { subscribe, update, set } = writable<NavigationState>(initial)
+  const backStack: NavigationState[] = []
+  const forwardStack: NavigationState[] = []
+  let current = initial
   let lastNonLyrics: NavigationState | null = null
+
+  const navigate = (change: (state: NavigationState) => NavigationState, remember = true) => {
+    update((state) => {
+      const next = change(state)
+      if (remember && next !== state) {
+        backStack.push(state)
+        if (backStack.length > 40) backStack.shift()
+        forwardStack.length = 0
+      }
+      current = next
+      return next
+    })
+  }
 
   return {
     subscribe,
 
     goHome() {
-      update((s) => ({ ...s, page: 'home', playlistId: null, searchQuery: '' }))
+      navigate((state) => ({ ...state, page: 'home', playlistId: null, searchQuery: '', entityType: null, entityId: null }))
     },
 
     openPlaylist(playlistId: string) {
-      update((s) => ({ ...s, page: 'playlist', playlistId, searchQuery: '' }))
+      navigate((state) => ({ ...state, page: 'playlist', playlistId, searchQuery: '', entityType: null, entityId: null }))
     },
 
     openLikedSongs() {
-      update((s) => ({ ...s, page: 'playlist', playlistId: 'liked', searchQuery: '' }))
+      navigate((state) => ({ ...state, page: 'playlist', playlistId: 'liked', searchQuery: '', entityType: null, entityId: null }))
+    },
+
+    openLibrary() {
+      navigate((state) => ({ ...state, page: 'library', searchQuery: '', playlistId: null, entityType: null, entityId: null }))
+    },
+
+    openSettings() {
+      navigate((state) => ({ ...state, page: 'settings', searchQuery: '', playlistId: null, entityType: null, entityId: null }))
+    },
+
+    openEntity(entityType: EntityType, entityId: string) {
+      navigate((state) => ({ ...state, page: 'entity', entityType, entityId, playlistId: null, searchQuery: '' }))
     },
 
     openLyrics() {
-      update((s) => {
-        if (s.page !== 'lyrics') lastNonLyrics = s
-        return { ...s, page: 'lyrics', playlistId: null, searchQuery: '' }
+      navigate((state) => {
+        if (state.page !== 'lyrics') lastNonLyrics = state
+        return { ...state, page: 'lyrics', playlistId: null, searchQuery: '', entityType: null, entityId: null }
       })
     },
 
     closeLyrics() {
-      update((s) => {
-        if (s.page !== 'lyrics') return s
-        if (lastNonLyrics) return lastNonLyrics
-        return { ...s, page: 'home', playlistId: null, searchQuery: '' }
+      navigate((state) => {
+        if (state.page !== 'lyrics') return state
+        return lastNonLyrics ?? { ...state, page: 'home', playlistId: null, searchQuery: '' }
       })
     },
 
     toggleLyrics() {
-      update((s) => {
-        if (s.page === 'lyrics') {
-          if (lastNonLyrics) return lastNonLyrics
-          return { ...s, page: 'home', playlistId: null, searchQuery: '' }
-        }
-
-        lastNonLyrics = s
-        return { ...s, page: 'lyrics', playlistId: null, searchQuery: '' }
+      navigate((state) => {
+        if (state.page === 'lyrics') return lastNonLyrics ?? { ...state, page: 'home', playlistId: null, searchQuery: '' }
+        lastNonLyrics = state
+        return { ...state, page: 'lyrics', playlistId: null, searchQuery: '' }
       })
     },
 
+    back() {
+      const previous = backStack.pop()
+      if (!previous) return
+      forwardStack.push(current)
+      current = previous
+      set(previous)
+    },
+
+    forward() {
+      const next = forwardStack.pop()
+      if (!next) return
+      backStack.push(current)
+      current = next
+      set(next)
+    },
+
     setSearchQuery(query: string) {
-      const q = query
-      update((s) => {
-        if (q.trim().length) {
-          if (s.page !== 'lyrics') lastNonLyrics = s
-          return { ...s, page: 'search', playlistId: null, searchQuery: q }
+      const remember = current.page !== 'search' && Boolean(query.trim())
+      navigate((state) => {
+        if (query.trim()) {
+          if (state.page !== 'lyrics' && state.page !== 'search') lastNonLyrics = state
+          return { ...state, page: 'search', playlistId: null, searchQuery: query }
         }
-
-        // Clearing search returns to home (unless you explicitly navigated elsewhere).
-        if (s.page === 'search') {
-          return { ...s, page: 'home', searchQuery: '' }
-        }
-
-        return { ...s, searchQuery: '' }
-      })
-    }
+        if (state.page === 'search') return { ...state, page: 'home', searchQuery: '' }
+        return { ...state, searchQuery: '' }
+      }, remember)
+    },
   }
 }
 

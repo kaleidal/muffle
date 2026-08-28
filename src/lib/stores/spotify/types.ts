@@ -48,10 +48,6 @@ export type SpotifyDevice = {
   is_active: boolean
 }
 
-export type SpotifyFeaturedPlaylists = {
-  playlists: { items: SpotifyPlaylist[] }
-}
-
 export type SpotifyPaging<T> = {
   items: T[]
   next: string | null
@@ -66,13 +62,21 @@ export type SpotifyPlaylistMeta = {
   name: string
   uri: string
   images: SpotifyImage[]
-  owner?: { display_name?: string }
+  owner?: { display_name?: string; id?: string }
   snapshot_id?: string
   tracks?: { total?: number }
 }
 
 export type SpotifyPlaylistTracksPage = {
   items: Array<{
+    item?: {
+      id: string
+      uri: string
+      name: string
+      duration_ms: number
+      artists: { name: string }[]
+      album: { name: string; images: SpotifyImage[] }
+    } | null
     track: {
       id: string
       uri: string
@@ -83,25 +87,6 @@ export type SpotifyPlaylistTracksPage = {
     } | null
   }>
   next: string | null
-}
-
-export type SpotifySearchTracksResponse = {
-  tracks: {
-    items: Array<{
-      id: string
-      uri: string
-      name: string
-      duration_ms: number
-      artists: { name: string }[]
-      album: { name: string; images: SpotifyImage[] }
-    }>
-  }
-}
-
-export type SpotifySearchPlaylistsResponse = {
-  playlists: {
-    items: SpotifyPlaylist[]
-  }
 }
 
 export type SpotifySavedTracksPage = {

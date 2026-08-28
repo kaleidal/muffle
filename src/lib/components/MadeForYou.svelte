@@ -1,847 +1,355 @@
 <script lang="ts">
-    import { afterUpdate, onDestroy, onMount } from "svelte";
-    import { fly, fade } from "svelte/transition";
-    import PlaylistCard from "./PlaylistCard.svelte";
-    import { spotifyStore } from "../stores/spotify";
-    import { playerStore } from "../stores/playerStore";
+  import { onMount } from 'svelte'
+  import { spotifyStore } from '../stores/spotify'
+  import { navigationStore } from '../stores/navigationStore'
+  import { image, loadHome, type HomeData, type HomeTrack } from '../stores/spotify/home'
 
-    // Helper to enable shuffle and show loading when playing from home
-    async function playWithShuffleAndLoading(
-        playFn: () => Promise<void>,
-        options?: { playlistUri?: string; playlistId?: string },
-    ) {
-        playerStore.setQueueLoading(true);
-        try {
-            // Enable shuffle for home playback
-            await spotifyStore.setShuffle(true);
+  let data = $state.raw<HomeData | null>(null)
+  let loading = $state(true)
+  let error = $state<string | null>(null)
+  let playingId = $state<string | null>(null)
 
-            // For playlists, pick a random track to start shuffled playback
-            if (options?.playlistUri && options?.playlistId) {
-                try {
-                    const playlistData = await spotifyStore.getPlaylistView(
-                        options.playlistId,
-                    );
-                    if (playlistData.tracks.length > 0) {
-                        const randomIndex = Math.floor(
-                            Math.random() * playlistData.tracks.length,
-                        );
-                        const randomTrack = playlistData.tracks[randomIndex];
+  const firstName = $derived($spotifyStore.user?.display_name?.split(/\s+/)[0] || 'you')
+  const hero = $derived(data?.recent[0] ?? data?.topTracks[0] ?? null)
+  const quickPicks = $derived((data?.recent ?? []).slice(1, 7))
 
-                        // Optimistically update the now playing card
-                        if (randomTrack) {
-                            playerStore.setOptimisticTrack({
-                                id: randomTrack.id,
-                                name: randomTrack.name,
-                                artist: randomTrack.artist,
-                                album: randomTrack.album,
-                                albumArt: randomTrack.albumArt,
-                                duration: randomTrack.duration,
-                                uri: randomTrack.uri,
-                            });
-                        }
+  onMount(() => {
+    void refresh()
+  })
 
-                        await spotifyStore.playPlaylistTrack(
-                            options.playlistUri,
-                            randomIndex,
-                        );
-                        return;
-                    }
-                } catch (e) {
-                    console.warn(
-                        "Failed to pick random track, falling back:",
-                        e,
-                    );
-                    // Fall back to normal playback
-                }
-            }
-
-            await playFn();
-        } finally {
-            // Clear loading after a brief delay to allow track to load
-            setTimeout(() => {
-                playerStore.setQueueLoading(false);
-            }, 500);
-        }
+  async function refresh() {
+    if ($spotifyStore.status !== 'authenticated') return
+    loading = true
+    error = null
+    try {
+      data = await loadHome('native')
+    } catch (cause) {
+      error = String((cause as Error)?.message || cause)
+    } finally {
+      loading = false
     }
-    let menu: null | {
-        x: number;
-        y: number;
-        uri: string;
-    } = null;
+  }
 
-    const closeMenu = () => {
-        menu = null;
-    };
-
-    function openUriMenu(e: MouseEvent, uri: string | null | undefined) {
-        if (!uri) return;
-        e.preventDefault();
-        e.stopPropagation();
-        menu = { x: e.clientX, y: e.clientY, uri };
+  async function playTrack(track: HomeTrack) {
+    playingId = track.id
+    try {
+      await spotifyStore.playTrackUri(track.uri)
+    } finally {
+      window.setTimeout(() => {
+        if (playingId === track.id) playingId = null
+      }, 500)
     }
-    import {
-        cssVarHexToRgbTriplet,
-        getDominantRgbTriplet,
-    } from "../utils/imageColor";
+  }
 
-    type HomeCard = {
-        id: string;
-        name: string;
-        image: string;
-        kind: "playlist" | "track" | "artist" | "mix";
-        uri?: string;
-        artist?: string;
-        album?: string;
-        albumArt?: string;
-        duration?: number;
-    };
-
-    type HomeSection = {
-        id: string;
-        name: string;
-        cards: HomeCard[];
-    };
-
-    $: displayName = $spotifyStore.user?.display_name || "You";
-
-    let baseRgb = "255 255 255";
-    let heroRgb = baseRgb;
-    let lastHeroImage: string | null = null;
-    let heroReq = 0;
-
-    $: [heroR, heroG, heroB] = heroRgb.split(" ").map((n) => Number(n) || 0);
-
-    const setHeroFromImage = async (image: string | undefined | null) => {
-        const src = image || null;
-        if (!src) return;
-        if (src === lastHeroImage) return;
-        lastHeroImage = src;
-
-        const req = ++heroReq;
-        const rgb = await getDominantRgbTriplet(src);
-        if (req !== heroReq) return;
-        if (rgb) heroRgb = rgb;
-    };
-
-    const clearHero = () => {
-        lastHeroImage = null;
-        heroRgb = baseRgb;
-    };
-
-    let scrollerEl: HTMLDivElement | null = null;
-    let heroPlaceholderEl: HTMLButtonElement | null = null;
-
-    // Single-element hover animation state (no overlay swap = no flicker/snapping)
-    let heroHovered = false;
-
-    const onHeroEnter = () => {
-        heroHovered = true;
-    };
-
-    const onHeroLeave = () => {
-        heroHovered = false;
-        clearHero();
-    };
-
-    let loading = false;
-    let heroLoading = false;
-    let error: string | null = null;
-    let sections: HomeSection[] = [];
-
-    let lastStatus: string | null = null;
-    let inFlight: Promise<void> | null = null;
-
-    let lastDataSig: string | null = null;
-
-    let rowEls: Record<string, HTMLDivElement | null> = {};
-    let rowHasOverflow: Record<string, boolean> = {};
-    let measureQueued = false;
-
-    let cardAccent: Record<string, string> = {};
-    let warmSig: string | null = null;
-
-    const measureOverflow = (id: string, el: HTMLDivElement) => {
-        rowHasOverflow[id] = el.scrollWidth > el.clientWidth + 1;
-    };
-
-    const measureAllRows = () => {
-        for (const [id, el] of Object.entries(rowEls)) {
-            if (el) measureOverflow(id, el);
-        }
-    };
-
-    const registerRow = (node: HTMLDivElement, id: string) => {
-        rowEls[id] = node;
-
-        const measure = () => measureOverflow(id, node);
-        queueMicrotask(measure);
-
-        let ro: ResizeObserver | null = null;
-        if (typeof ResizeObserver !== "undefined") {
-            ro = new ResizeObserver(() => measure());
-            ro.observe(node);
-        }
-
-        return {
-            destroy() {
-                if (rowEls[id] === node) delete rowEls[id];
-                if (rowHasOverflow[id] != null) delete rowHasOverflow[id];
-                ro?.disconnect();
-            },
-        };
-    };
-
-    const scrollRow = (id: string, dir: -1 | 1) => {
-        const el = rowEls[id];
-        if (!el) return;
-        const amount = Math.max(240, Math.floor(el.clientWidth * 0.85));
-        el.scrollBy({ left: dir * amount, behavior: "smooth" });
-    };
-
-    const load = async () => {
-        if ($spotifyStore.status !== "authenticated") return;
-        if (inFlight) return await inFlight;
-        loading = true;
-        error = null;
-
-        inFlight = (async () => {
-            try {
-                const res = await spotifyStore.getHomeSections();
-                sections = (res || []) as HomeSection[];
-            } catch (e: any) {
-                error = e?.message || "Failed to load home";
-                sections = [];
-            } finally {
-                loading = false;
-                inFlight = null;
-            }
-        })();
-
-        await inFlight;
-    };
-
-    $: {
-        const status = $spotifyStore.status;
-        if (status !== lastStatus) {
-            lastStatus = status;
-
-            if (status === "authenticated") {
-                void load();
-            } else {
-                inFlight = null;
-                sections = [];
-                error = null;
-                loading = false;
-            }
-        }
-    }
-
-    $: if ($spotifyStore.status === "authenticated") {
-        const sig = `${$spotifyStore.playlists.length}:${$spotifyStore.topArtists.length}`;
-        if (lastDataSig === null) lastDataSig = sig;
-
-        const hasYourPlaylists = sections.some(
-            (s) => s.id === "your_playlists",
-        );
-        const hasTopArtists = sections.some((s) => s.id === "top_artists");
-        const onlyTopTracks =
-            sections.length === 1 && sections[0]?.id === "top_tracks";
-
-        const dataArrived =
-            sig !== lastDataSig &&
-            ($spotifyStore.playlists.length > 0 ||
-                $spotifyStore.topArtists.length > 0);
-
-        if (
-            !loading &&
-            !inFlight &&
-            sections.length &&
-            (onlyTopTracks || !hasYourPlaylists || !hasTopArtists) &&
-            dataArrived
-        ) {
-            lastDataSig = sig;
-            void load();
-        } else if (sig !== lastDataSig) {
-            lastDataSig = sig;
-        }
-    }
-
-    onDestroy(() => {
-        inFlight = null;
-    });
-
-    onMount(() => {
-        try {
-            const hex = getComputedStyle(
-                document.documentElement,
-            ).getPropertyValue("--accent-primary");
-            const parsed = cssVarHexToRgbTriplet(hex);
-            if (parsed) baseRgb = parsed;
-        } catch {
-            // ignore
-        }
-        heroRgb = baseRgb;
-    });
-
-    afterUpdate(() => {
-        if (measureQueued) return;
-        measureQueued = true;
-        requestAnimationFrame(() => {
-            measureQueued = false;
-            measureAllRows();
-        });
-    });
-
-    const warmAccents = async () => {
-        const sig = sections
-            .flatMap((s) => s.cards)
-            .slice(0, 10)
-            .map((c) => c.image)
-            .join("|");
-
-        if (!sig || sig === warmSig) return;
-        warmSig = sig;
-
-        const imgs = sections
-            .flatMap((s) => s.cards)
-            .map((c) => c.image)
-            .filter(Boolean)
-            .slice(0, 10);
-
-        await Promise.all(
-            imgs.map(async (img) => {
-                if (cardAccent[img]) return;
-                const rgb = await getDominantRgbTriplet(img);
-                if (!rgb) return;
-                cardAccent = { ...cardAccent, [img]: rgb };
-            }),
-        );
-    };
-
-    $: if (sections.length) {
-        void warmAccents();
-    }
-
-    $: continueSection = sections.find((s) => s.id === "continue");
-    $: heroCard = continueSection?.cards?.[0] || null;
-    $: renderSections = heroCard
-        ? sections.filter((s) => s.id !== "continue")
-        : sections;
+  function artistNames(track: HomeTrack) {
+    return track.artists.map((artist) => artist.name).join(', ')
+  }
 </script>
 
-<div
-    class="bg-(--bg-secondary) rounded-[40px] h-full flex flex-col absolute inset-0"
-    in:fly={{ x: 18, duration: 220 }}
-    out:fade={{ duration: 140 }}
->
-    <!-- Clip ONLY the top glow to the rounded panel; keep content free to scale -->
-    <div class="absolute inset-0 rounded-[40px] pointer-events-none">
-        <div class="absolute inset-0 rounded-[40px] overflow-hidden">
-            <div
-                class="absolute inset-x-0 top-0 h-80 hero-bg"
-                style={`--hero-r: ${heroR}; --hero-g: ${heroG}; --hero-b: ${heroB};`}
-            ></div>
-        </div>
+<section class="home-stage h-full overflow-y-auto scrollbar-hide rounded-[40px] bg-[#101010]">
+  {#if loading}
+    <div class="home-skeleton" aria-label="Loading your music">
+      <div class="skeleton hero-skeleton"></div>
+      <div class="skeleton-row">
+        {#each Array(6) as _, index (index)}
+          <div class="skeleton pick-skeleton"></div>
+        {/each}
+      </div>
     </div>
+  {:else if error}
+    <div class="empty-state">
+      <h1>Spotify went quiet for a moment</h1>
+      <p>{error}</p>
+      <button class="light-button" onclick={refresh}>Try again</button>
+    </div>
+  {:else if data}
+    <div class="home-content">
+      <header class="intro">
+        <h1>{firstName}</h1>
+      </header>
 
-    <div class="relative z-10 flex flex-col h-full">
-        <div class="shrink-0 px-10 pt-8 pb-2">
-            <div class="flex items-end justify-between gap-6 relative">
-                <div class="min-w-0">
-                    <p
-                        class="text-white/60 text-sm font-semibold tracking-wide"
-                    >
-                        Home
-                    </p>
-                    <h2
-                        class="text-white text-6xl font-extrabold tracking-tight leading-none truncate"
-                    >
-                        {displayName}
-                    </h2>
-                </div>
+      {#if hero}
+        <article class="hero" style:--hero-art={`url("${image(hero.album.images)}")`}>
+          <div class="hero-copy">
+            <span>Pick up where you left off</span>
+            <h2>{hero.name}</h2>
+            <p>{artistNames(hero)}</p>
+            <button class="hero-play" onclick={() => playTrack(hero)} aria-label={`Play ${hero.name}`}>
+              {#if playingId === hero.id}
+                <span class="pulse-dot"></span>
+              {:else}
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+              {/if}
+              Play now
+            </button>
+          </div>
+          <div class="hero-artwork">
+            {#each data.recent.slice(0, 3) as track, index (track.id)}
+              <img
+                src={image(track.album.images)}
+                alt={track.album.name}
+                style:--stack-index={index}
+              />
+            {/each}
+          </div>
+        </article>
+      {/if}
 
-                {#if $spotifyStore.status !== "authenticated"}
-                    <button
-                        class="no-drag px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 transition-colors text-sm font-semibold shrink-0"
-                        onclick={() => spotifyStore.login()}
-                        aria-label="Connect Spotify"
-                    >
-                        Connect Spotify
-                    </button>
-                {/if}
+      {#if quickPicks.length}
+        <section class="quick-section">
+          <div class="section-heading">
+            <h2>Back in rotation</h2>
+            <p>Your week, still warm</p>
+          </div>
+          <div class="quick-grid">
+            {#each quickPicks as track (track.id)}
+              <button class="quick-pick" onclick={() => playTrack(track)}>
+                <img src={image(track.album.images)} alt={track.album.name} />
+                <span class="quick-copy">
+                  <strong>{track.name}</strong>
+                  <small>{artistNames(track)}</small>
+                </span>
+                <span class="quick-play" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                </span>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <div class="editorial-grid">
+        {#if data.topTracks.length}
+          <section class="chart">
+            <div class="section-heading">
+              <h2>On repeat</h2>
+              <p>The songs winning your attention</p>
             </div>
-        </div>
-
-        {#if $spotifyStore.status === "authenticated"}
-            <div
-                bind:this={scrollerEl}
-                class="flex-1 min-h-0 overflow-y-auto scrollbar-hide mt-2 pb-6 relative"
-                style="overflow-x: clip;"
-            >
-                {#if heroCard}
-                    <!-- Hero card with room for lift/scale animation -->
-                    <div class="px-10 pt-2 pb-0 mb-8 overflow-visible">
-                        <button
-                            bind:this={heroPlaceholderEl}
-                            class="w-full rounded-3xl overflow-hidden bg-white/5 hover:bg-white/8 transition-colors flex items-center gap-5 p-5 hero-card-btn"
-                            class:hero-card-btn--lifted={heroHovered}
-                            onclick={async () => {
-                                if (heroLoading) return;
-                                heroLoading = true;
-                                await playWithShuffleAndLoading(
-                                    async () => {
-                                        if (
-                                            heroCard.kind === "playlist" &&
-                                            heroCard.uri
-                                        ) {
-                                            await spotifyStore.playContextUri(
-                                                heroCard.uri,
-                                            );
-                                            return;
-                                        }
-                                        if (
-                                            heroCard.kind === "track" &&
-                                            heroCard.uri
-                                        ) {
-                                            if (
-                                                heroCard.artist &&
-                                                heroCard.album &&
-                                                heroCard.albumArt &&
-                                                typeof heroCard.duration ===
-                                                    "number"
-                                            ) {
-                                                playerStore.setOptimisticTrack({
-                                                    id: heroCard.id,
-                                                    name: heroCard.name,
-                                                    artist: heroCard.artist,
-                                                    album: heroCard.album,
-                                                    albumArt: heroCard.albumArt,
-                                                    duration: heroCard.duration,
-                                                    uri: heroCard.uri,
-                                                });
-                                            }
-                                            await spotifyStore.playTrackUri(
-                                                heroCard.uri,
-                                            );
-                                            return;
-                                        }
-                                        if (
-                                            heroCard.kind === "artist" &&
-                                            heroCard.uri
-                                        ) {
-                                            await spotifyStore.playContextUri(
-                                                heroCard.uri,
-                                            );
-                                            return;
-                                        }
-                                    },
-                                    heroCard.kind === "playlist" && heroCard.uri
-                                        ? {
-                                              playlistUri: heroCard.uri,
-                                              playlistId: heroCard.id,
-                                          }
-                                        : undefined,
-                                );
-                                setTimeout(() => {
-                                    heroLoading = false;
-                                }, 300);
-                            }}
-                            oncontextmenu={(e) =>
-                                heroCard.kind === "track"
-                                    ? openUriMenu(e, heroCard.uri)
-                                    : undefined}
-                            onmouseenter={() => {
-                                void setHeroFromImage(heroCard.image);
-                                onHeroEnter();
-                            }}
-                            onmouseleave={() => onHeroLeave()}
-                            aria-label={`Play ${heroCard.name}`}
-                        >
-                            <div class="hero-card-inner">
-                                <div
-                                    class="w-20 h-20 rounded-3xl overflow-hidden bg-white/5 shrink-0 relative"
-                                >
-                                    {#if heroCard.image}
-                                        <img
-                                            src={heroCard.image}
-                                            alt={heroCard.name}
-                                            class="w-full h-full object-cover"
-                                        />
-                                    {/if}
-                                </div>
-
-                                <div class="min-w-0 flex-1">
-                                    <p
-                                        class="text-white/60 text-sm font-semibold tracking-wide truncate"
-                                    >
-                                        Continue listening
-                                    </p>
-                                    <div
-                                        class="text-white text-2xl font-extrabold tracking-tight truncate"
-                                    >
-                                        {heroCard.name}
-                                    </div>
-                                </div>
-
-                                <div
-                                    class="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shrink-0"
-                                >
-                                    {#if heroLoading}
-                                        <div
-                                            class="loading-spinner w-5 h-5 border-2 border-black/30 border-t-black rounded-full"
-                                        ></div>
-                                    {:else}
-                                        <svg
-                                            class="w-6 h-6 text-black ml-0.5"
-                                            fill="currentColor"
-                                            viewBox="0 0 24 24"
-                                            aria-hidden="true"
-                                        >
-                                            <path d="M8 5v14l11-7z" />
-                                        </svg>
-                                    {/if}
-                                </div>
-                            </div>
-                        </button>
-                    </div>
-                {/if}
-
-                {#if loading}
-                    <div class="text-white/50 text-sm font-semibold">
-                        Loading…
-                    </div>
-                {:else if error}
-                    <div class="text-white/50 text-sm font-semibold">
-                        {error}
-                    </div>
-                {:else}
-                    <div class="space-y-10 px-10">
-                        {#each renderSections as section (section.id)}
-                            <div class="space-y-3">
-                                <div
-                                    class="flex items-center justify-between gap-4"
-                                >
-                                    <p
-                                        class="text-white/85 text-base font-extrabold tracking-tight"
-                                    >
-                                        {section.name}
-                                    </p>
-
-                                    {#if rowHasOverflow[section.id]}
-                                        <div
-                                            class="flex items-center gap-2 shrink-0"
-                                        >
-                                            <button
-                                                class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center"
-                                                aria-label={`Scroll ${section.name} left`}
-                                                onclick={() =>
-                                                    scrollRow(section.id, -1)}
-                                            >
-                                                <svg
-                                                    class="w-5 h-5 text-white/80"
-                                                    fill="currentColor"
-                                                    viewBox="0 0 24 24"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path
-                                                        d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"
-                                                    />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 transition-colors flex items-center justify-center"
-                                                aria-label={`Scroll ${section.name} right`}
-                                                onclick={() =>
-                                                    scrollRow(section.id, 1)}
-                                            >
-                                                <svg
-                                                    class="w-5 h-5 text-white/80"
-                                                    fill="currentColor"
-                                                    viewBox="0 0 24 24"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path
-                                                        d="m8.59 16.59 1.41 1.41 6-6-6-6-1.41 1.41L13.17 12z"
-                                                    />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    {/if}
-                                </div>
-
-                                <div
-                                    class="flex gap-4 overflow-x-auto overflow-y-visible py-3 pl-10 -ml-10 scrollbar-hide"
-                                    use:registerRow={section.id}
-                                >
-                                    {#each section.cards as c (c.id)}
-                                        <div
-                                            role="button"
-                                            tabindex="0"
-                                            oncontextmenu={(e) =>
-                                                c.kind === "track"
-                                                    ? openUriMenu(e, c.uri)
-                                                    : undefined}
-                                        >
-                                            <PlaylistCard
-                                                mix={{
-                                                    id: c.id,
-                                                    name: c.name,
-                                                    image: c.image,
-                                                    type: c.kind,
-                                                }}
-                                                size="lg"
-                                                accentRgb={cardAccent[
-                                                    c.image
-                                                ] || null}
-                                                onmouseenter={() =>
-                                                    void setHeroFromImage(
-                                                        c.image,
-                                                    )}
-                                                onmouseleave={() => clearHero()}
-                                                onSelect={async () => {
-                                                    await playWithShuffleAndLoading(
-                                                        async () => {
-                                                            if (
-                                                                c.kind ===
-                                                                    "playlist" &&
-                                                                c.uri
-                                                            ) {
-                                                                await spotifyStore.playContextUri(
-                                                                    c.uri,
-                                                                );
-                                                                return;
-                                                            }
-                                                            if (
-                                                                c.kind ===
-                                                                    "track" &&
-                                                                c.uri
-                                                            ) {
-                                                                if (
-                                                                    c.artist &&
-                                                                    c.album &&
-                                                                    c.albumArt &&
-                                                                    typeof c.duration ===
-                                                                        "number"
-                                                                ) {
-                                                                    playerStore.setOptimisticTrack(
-                                                                        {
-                                                                            id: c.id,
-                                                                            name: c.name,
-                                                                            artist: c.artist,
-                                                                            album: c.album,
-                                                                            albumArt:
-                                                                                c.albumArt,
-                                                                            duration:
-                                                                                c.duration,
-                                                                            uri: c.uri,
-                                                                        },
-                                                                    );
-                                                                }
-                                                                await spotifyStore.playTrackUri(
-                                                                    c.uri,
-                                                                );
-                                                                return;
-                                                            }
-                                                            if (
-                                                                c.kind ===
-                                                                    "artist" &&
-                                                                c.uri
-                                                            ) {
-                                                                await spotifyStore.playContextUri(
-                                                                    c.uri,
-                                                                );
-                                                                return;
-                                                            }
-                                                            if (
-                                                                c.kind === "mix"
-                                                            ) {
-                                                                await spotifyStore.playMix(
-                                                                    c.id,
-                                                                );
-                                                                return;
-                                                            }
-                                                        },
-                                                        c.kind === "playlist" &&
-                                                            c.uri
-                                                            ? {
-                                                                  playlistUri:
-                                                                      c.uri,
-                                                                  playlistId:
-                                                                      c.id,
-                                                              }
-                                                            : undefined,
-                                                    );
-                                                }}
-                                            />
-                                        </div>
-                                    {/each}
-                                </div>
-                            </div>
-                        {/each}
-
-                        {#if sections.length === 0}
-                            <div class="text-white/50 text-sm font-semibold">
-                                Nothing yet
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
+            <div class="track-list">
+              {#each data.topTracks.slice(0, 7) as track, index (track.id)}
+                <button class="track-row" onclick={() => playTrack(track)}>
+                  <span class="rank">{String(index + 1).padStart(2, '0')}</span>
+                  <img src={image(track.album.images)} alt={track.album.name} />
+                  <span class="track-copy">
+                    <strong>{track.name}</strong>
+                    <small>{artistNames(track)}</small>
+                  </span>
+                  <span class="duration">{Math.floor(track.duration_ms / 60000)}:{String(Math.floor(track.duration_ms / 1000) % 60).padStart(2, '0')}</span>
+                </button>
+              {/each}
             </div>
+          </section>
         {/if}
-    </div>
-</div>
 
-{#if menu}
-    <div
-        class="fixed inset-0 z-60"
-        role="button"
-        tabindex="0"
-        aria-label="Close menu"
-        onclick={() => (menu = null)}
-        onkeydown={(e) => {
-            if (e.key === "Escape" || e.key === "Enter" || e.key === " ")
-                menu = null;
-        }}
-    >
-        <div
-            class="absolute w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30"
-            style={`left:${menu.x}px; top:${menu.y}px;`}
-            role="dialog"
-            tabindex="-1"
-            onclick={(e) => e.stopPropagation()}
-            onkeydown={(e) => {
-                if (e.key === "Escape") menu = null;
-            }}
-        >
-            <p class="text-white/60 text-xs font-semibold px-2 pb-2">QUEUE</p>
-            <div
-                class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn cursor-pointer"
-                role="menuitem"
-                tabindex="0"
-                onclick={() => {
-                    const uri = menu?.uri;
-                    if (uri) spotifyStore.enqueueUri(uri);
-                    menu = null;
-                }}
-                onkeydown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return;
-                    const uri = menu?.uri;
-                    if (uri) spotifyStore.enqueueUri(uri);
-                    menu = null;
-                }}
-            >
-                Add to queue
+        {#if data.topArtists.length}
+          <section class="artist-field">
+            <div class="section-heading">
+              <h2>Your orbit</h2>
+              <p>Artists pulling everything together</p>
             </div>
+            <div class="artist-cloud">
+              {#each data.topArtists.slice(0, 9) as artist, index (artist.id)}
+                <div class="artist" style:--artist-index={index}>
+                  <img src={image(artist.images)} alt={artist.name} />
+                  <span>{artist.name}</span>
+                </div>
+              {/each}
+            </div>
+          </section>
+        {/if}
+      </div>
+
+      {#if data.recommendations.length}
+        <section class="discovery">
+          <div class="section-heading">
+            <h2>A little left turn</h2>
+            <p>Picked from the music you keep returning to</p>
+          </div>
+          <div class="discovery-flow">
+            {#each data.recommendations.slice(0, 10) as track, index (track.id)}
+              <button class:feature={index === 0 || index === 6} onclick={() => playTrack(track)}>
+                <img src={image(track.album.images)} alt={track.album.name} />
+                <span><strong>{track.name}</strong><small>{artistNames(track)}</small></span>
+                <i aria-hidden="true">{String(index + 1).padStart(2, '0')}</i>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if data.albums.length}
+        <section class="album-shelf">
+          <div class="section-heading">
+            <h2>Albums you kept</h2>
+            <p>Worth hearing as a whole</p>
+          </div>
+          <div class="album-strip scrollbar-hide">
+            {#each data.albums as album (album.id)}
+              <button onclick={() => spotifyStore.playContextUri(album.uri)} class="album">
+                <img src={image(album.images)} alt={album.name} />
+                <strong>{album.name}</strong>
+                <span>{album.artists.map((artist) => artist.name).join(', ')}</span>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if data.shows.length || data.playlists.length}
+        <div class="lower-grid">
+          {#if data.shows.length}
+            <section class="shows">
+              <div class="section-heading">
+                <h2>Saved for later</h2>
+                <p>Podcasts waiting for the right hour</p>
+              </div>
+              <div class="show-stack">
+                {#each data.shows.slice(0, 5) as show (show.id)}
+                  <button onclick={() => spotifyStore.playContextUri(show.uri)}>
+                    <img src={image(show.images)} alt={show.name} />
+                    <span><strong>{show.name}</strong><small>{show.publisher || 'Podcast'}</small></span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
+
+          {#if data.playlists.length}
+            <section class="playlist-wall">
+              <div class="section-heading">
+                <h2>Your playlists</h2>
+                <p>Built by you and Spotify</p>
+              </div>
+              <div class="playlist-mosaic">
+                {#each data.playlists.slice(0, 8) as playlist, index (playlist.id)}
+                  <button
+                    class:wide={index === 0 || index === 5}
+                    onclick={() => navigationStore.openPlaylist(playlist.id)}
+                  >
+                    <img src={image(playlist.images)} alt={playlist.name} />
+                    <span>{playlist.name}</span>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
         </div>
+      {/if}
     </div>
-{/if}
+  {/if}
+</section>
 
 <style>
-    @property --hero-r {
-        syntax: "<number>";
-        inherits: true;
-        initial-value: 255;
-    }
-    @property --hero-g {
-        syntax: "<number>";
-        inherits: true;
-        initial-value: 255;
-    }
-    @property --hero-b {
-        syntax: "<number>";
-        inherits: true;
-        initial-value: 255;
-    }
-
-    .hero-bg {
-        transition:
-            --hero-r 260ms var(--liquid-ease),
-            --hero-g 260ms var(--liquid-ease),
-            --hero-b 260ms var(--liquid-ease);
-        background:
-            radial-gradient(
-                800px circle at 0% 0%,
-                rgb(var(--hero-r) var(--hero-g) var(--hero-b) / 0.4) 0%,
-                transparent 60%
-            ),
-            radial-gradient(
-                700px circle at 65% 0%,
-                rgb(var(--hero-r) var(--hero-g) var(--hero-b) / 0.18) 0%,
-                transparent 58%
-            ),
-            linear-gradient(
-                180deg,
-                rgb(var(--hero-r) var(--hero-g) var(--hero-b) / 0.14) 0%,
-                transparent 70%
-            );
-
-        -webkit-mask-image: linear-gradient(
-            180deg,
-            rgba(0, 0, 0, 1) 0%,
-            rgba(0, 0, 0, 1) 55%,
-            rgba(0, 0, 0, 0) 100%
-        );
-        mask-image: linear-gradient(
-            180deg,
-            rgba(0, 0, 0, 1) 0%,
-            rgba(0, 0, 0, 1) 55%,
-            rgba(0, 0, 0, 0) 100%
-        );
-        -webkit-mask-repeat: no-repeat;
-        mask-repeat: no-repeat;
-        -webkit-mask-size: 100% 100%;
-        mask-size: 100% 100%;
-    }
-
-    .scrollbar-hide {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-    }
-    .scrollbar-hide::-webkit-scrollbar {
-        display: none;
-    }
-
-    .loading-spinner {
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        from {
-            transform: rotate(0deg);
-        }
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    /* Keep layout stable by animating the button itself (background moves with it) */
-    .hero-card-btn {
-        transform: translateY(0px) scale(1);
-        transform-origin: center;
-        transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
-        will-change: transform;
-    }
-
-    .hero-card-btn--lifted {
-        transform: translateY(-6px) scale(1.02);
-        filter: drop-shadow(0 24px 60px rgba(0, 0, 0, 0.35));
-    }
-
-    /* Inner wrapper is purely structural now */
-    .hero-card-inner {
-        display: flex;
-        align-items: center;
-        width: 100%;
-    }
-
-    /* Respect reduced motion */
-    @media (prefers-reduced-motion: reduce) {
-        .hero-card-btn {
-            transition: none;
-        }
-        .hero-card-btn--lifted {
-            transform: none;
-            filter: none;
-        }
-    }
+  .home-stage { color: white; }
+  .home-content { padding: 2rem 2.5rem 4rem; }
+  .intro h1 { margin: 0 0 1.5rem; font-size: clamp(2.5rem, 5vw, 4.7rem); line-height: .95; letter-spacing: -.06em; }
+  .hero { position: relative; min-height: 21rem; display: grid; grid-template-columns: minmax(0,1fr) minmax(18rem,.72fr); overflow: hidden; border-radius: 2.25rem; background: #162219; isolation: isolate; }
+  .hero::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,20,14,.98) 5%, rgba(12,20,14,.77) 48%, rgba(12,20,14,.12)), var(--hero-art); background-position: center; background-size: cover; filter: saturate(.85); z-index: -2; }
+  .hero::after { content: ''; position: absolute; inset: 0; background: rgba(8,12,9,.18); backdrop-filter: blur(28px); mask-image: linear-gradient(90deg,#000 0%,#000 35%,transparent 78%); z-index: -1; }
+  .hero-copy { align-self: end; padding: 2.7rem; max-width: 36rem; }
+  .hero-copy > span { color: rgba(255,255,255,.65); font-size: .86rem; font-weight: 650; }
+  .hero h2 { margin: .35rem 0 .2rem; font-size: clamp(2.3rem,4.4vw,4.6rem); line-height: .94; letter-spacing: -.055em; text-wrap: balance; }
+  .hero p { margin: 0 0 1.5rem; color: rgba(255,255,255,.68); font-weight: 550; }
+  .hero-play, .light-button { display: inline-flex; align-items: center; gap: .55rem; padding: .8rem 1.1rem; border-radius: 999px; background: #f5f5f5; color: #080808; font-weight: 750; transition: transform .2s ease, background .2s ease; }
+  .hero-play:hover, .light-button:hover { transform: scale(1.035); background: white; }
+  .hero-play:active, .light-button:active { transform: scale(.97); }
+  .hero-play svg { width: 1.15rem; fill: currentColor; }
+  .pulse-dot { width: .7rem; height: .7rem; border-radius: 50%; background: #17b95a; animation: pulse 1s ease infinite; }
+  .hero-artwork { position: relative; min-height: 21rem; }
+  .hero-artwork img { position: absolute; width: 14.5rem; aspect-ratio: 1; object-fit: cover; border-radius: 2rem; right: calc(2rem + var(--stack-index) * 4.8rem); top: calc(3.2rem + var(--stack-index) * 1.25rem); transform: rotate(calc((var(--stack-index) - 1) * 7deg)); box-shadow: 0 1.8rem 4rem rgba(0,0,0,.44); }
+  .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1.05rem; }
+  .section-heading h2 { margin: 0; font-size: 1.35rem; letter-spacing: -.025em; }
+  .section-heading p { margin: 0; color: rgba(255,255,255,.42); font-size: .82rem; }
+  .quick-section, .editorial-grid, .discovery, .album-shelf, .lower-grid { margin-top: 2.25rem; }
+  .quick-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
+  .quick-pick { display: grid; grid-template-columns: 4.2rem minmax(0,1fr) 2.6rem; align-items: center; gap: .85rem; padding: .55rem .7rem .55rem .55rem; border-radius: 1.35rem; background: #191919; color: white; text-align: left; transition: transform .2s ease, background .2s ease; }
+  .quick-pick:hover { transform: translateY(-2px); background: #222; }
+  .quick-pick img { width: 4.2rem; aspect-ratio: 1; object-fit: cover; border-radius: 1rem; }
+  .quick-copy { min-width: 0; display: grid; gap: .2rem; }
+  .quick-copy strong, .quick-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quick-copy strong { font-size: .91rem; }
+  .quick-copy small { color: rgba(255,255,255,.46); }
+  .quick-play { display: grid; place-items: center; width: 2.35rem; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.1); opacity: .35; transition: opacity .2s ease, background .2s ease; }
+  .quick-pick:hover .quick-play { opacity: 1; background: #f3f3f3; color: #090909; }
+  .quick-play svg { width: 1rem; fill: currentColor; }
+  .editorial-grid { display: grid; grid-template-columns: minmax(0,1.12fr) minmax(20rem,.88fr); gap: 1rem; }
+  .chart, .artist-field, .shows, .playlist-wall { padding: 1.5rem; border-radius: 2rem; background: #171717; }
+  .track-list { display: grid; }
+  .track-row { display: grid; grid-template-columns: 2.2rem 3rem minmax(0,1fr) auto; align-items: center; gap: .75rem; padding: .6rem .4rem; border-radius: 1rem; color: white; text-align: left; transition: background .18s ease, transform .18s ease; }
+  .track-row:hover { background: rgba(255,255,255,.07); transform: translateX(3px); }
+  .rank, .duration { color: rgba(255,255,255,.33); font-size: .76rem; font-variant-numeric: tabular-nums; }
+  .track-row img { width: 3rem; aspect-ratio: 1; object-fit: cover; border-radius: .8rem; }
+  .track-copy { display: grid; min-width: 0; }
+  .track-copy strong, .track-copy small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .track-copy strong { font-size: .88rem; }
+  .track-copy small { color: rgba(255,255,255,.42); font-size: .75rem; }
+  .artist-field { overflow: hidden; background: #191716; }
+  .artist-cloud { min-height: 26rem; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-content: space-around; gap: 1.2rem .5rem; }
+  .artist { display: grid; justify-items: center; gap: .45rem; }
+  .artist:nth-child(2), .artist:nth-child(5), .artist:nth-child(8) { transform: translateY(1.1rem); }
+  .artist img { width: min(7.2rem,100%); aspect-ratio: 1; object-fit: cover; border-radius: 38%; box-shadow: 0 1rem 2.4rem rgba(0,0,0,.3); transition: transform .3s cubic-bezier(.2,.8,.2,1), border-radius .3s ease; }
+  .artist:hover img { transform: translateY(-5px) rotate(-2deg); border-radius: 50%; }
+  .artist span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; font-weight: 650; color: rgba(255,255,255,.72); }
+  .discovery-flow { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); grid-auto-rows: 7rem; gap: .65rem; }
+  .discovery-flow button { position: relative; grid-column: span 2; display: grid; grid-template-columns: 5.7rem minmax(0,1fr); align-items: end; gap: .85rem; overflow: hidden; padding: .65rem; border-radius: 1.4rem; background: #191919; color: white; text-align: left; }
+  .discovery-flow button.feature { grid-column: span 3; grid-row: span 2; grid-template-columns: 9.5rem minmax(0,1fr); }
+  .discovery-flow img { width: 5.7rem; aspect-ratio: 1; border-radius: 1rem; object-fit: cover; transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+  .discovery-flow .feature img { width: 9.5rem; }
+  .discovery-flow button:hover img { transform: rotate(-2deg) scale(1.035); }
+  .discovery-flow span { min-width: 0; display: grid; gap: .2rem; padding-bottom: .25rem; }
+  .discovery-flow strong, .discovery-flow small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .discovery-flow small { color: rgba(255,255,255,.42); }
+  .discovery-flow i { position: absolute; right: .7rem; top: .55rem; color: rgba(255,255,255,.18); font-size: .7rem; font-style: normal; font-variant-numeric: tabular-nums; }
+  .album-strip { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(9rem, 12rem); gap: .9rem; overflow-x: auto; padding-bottom: .5rem; }
+  .album { color: white; text-align: left; min-width: 0; }
+  .album img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 1.55rem; transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+  .album:hover img { transform: translateY(-5px) scale(1.015); }
+  .album strong, .album span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .album strong { margin-top: .65rem; font-size: .86rem; }
+  .album span { margin-top: .15rem; color: rgba(255,255,255,.4); font-size: .75rem; }
+  .lower-grid { display: grid; grid-template-columns: minmax(18rem,.8fr) minmax(0,1.2fr); gap: 1rem; }
+  .show-stack { display: grid; gap: .5rem; }
+  .show-stack button { display: grid; grid-template-columns: 3.7rem minmax(0,1fr) 1.2rem; gap: .8rem; align-items: center; padding: .55rem; color: white; text-align: left; border-radius: 1rem; transition: background .2s ease; }
+  .show-stack button:hover { background: rgba(255,255,255,.06); }
+  .show-stack img { width: 3.7rem; aspect-ratio: 1; object-fit: cover; border-radius: 1rem; }
+  .show-stack span { display: grid; min-width: 0; }
+  .show-stack strong, .show-stack small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .show-stack small { color: rgba(255,255,255,.4); margin-top: .16rem; }
+  .show-stack svg { width: 1.1rem; fill: none; stroke: rgba(255,255,255,.42); stroke-width: 2; }
+  .playlist-mosaic { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); grid-auto-rows: 9rem; gap: .65rem; }
+  .playlist-mosaic button { position: relative; overflow: hidden; border-radius: 1.35rem; background: #222; color: white; text-align: left; }
+  .playlist-mosaic button.wide { grid-column: span 2; }
+  .playlist-mosaic img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+  .playlist-mosaic button:hover img { transform: scale(1.05); }
+  .playlist-mosaic span { position: absolute; inset: auto .65rem .65rem; padding: .45rem .6rem; border-radius: .75rem; background: rgba(6,6,6,.72); backdrop-filter: blur(12px); font-size: .75rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-skeleton { padding: 5rem 2.5rem; }
+  .skeleton { background: #191919; animation: breathe 1.5s ease-in-out infinite; }
+  .hero-skeleton { height: 21rem; border-radius: 2.25rem; }
+  .skeleton-row { display: grid; grid-template-columns: repeat(3,1fr); gap: .75rem; margin-top: 2rem; }
+  .pick-skeleton { height: 5rem; border-radius: 1.35rem; }
+  .empty-state { min-height: 100%; display: grid; place-content: center; justify-items: start; padding: 3rem; }
+  .empty-state h1 { margin: 0 0 .5rem; font-size: 2.5rem; letter-spacing: -.05em; }
+  .empty-state p { max-width: 34rem; margin: 0 0 1.5rem; color: rgba(255,255,255,.5); }
+  @keyframes breathe { 50% { background: #202020; } }
+  @keyframes pulse { 50% { transform: scale(.65); opacity: .55; } }
+  @media (max-width: 1120px) {
+    .quick-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .editorial-grid, .lower-grid { grid-template-columns: 1fr; }
+    .discovery-flow { grid-template-columns: repeat(4,minmax(0,1fr)); }
+    .discovery-flow button.feature { grid-column: span 4; }
+    .artist-cloud { min-height: 22rem; }
+  }
+  @media (max-width: 820px) {
+    .home-content { padding: 1.4rem 1.25rem 3rem; }
+    .hero { grid-template-columns: 1fr; min-height: 19rem; }
+    .hero-copy { padding: 2rem; }
+    .hero-artwork { display: none; }
+    .quick-grid { grid-template-columns: 1fr; }
+    .section-heading { align-items: flex-start; flex-direction: column; gap: .25rem; }
+    .playlist-mosaic { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .discovery-flow { grid-template-columns: 1fr; grid-auto-rows: auto; }
+    .discovery-flow button, .discovery-flow button.feature { grid-column: auto; grid-row: auto; grid-template-columns: 4.5rem minmax(0,1fr); }
+    .discovery-flow img, .discovery-flow .feature img { width: 4.5rem; }
+  }
 </style>

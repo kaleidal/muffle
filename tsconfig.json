@@ -16,8 +16,7 @@
     "src/**/*.ts",
     "src/**/*.d.ts",
     "src/**/*.svelte",
-    "electron/**/*.ts",
-    "vite.config.ts",
-    "svelte.config.mjs"
+    "vite.config.mts",
+    "svelte.config.ts"
   ]
 }

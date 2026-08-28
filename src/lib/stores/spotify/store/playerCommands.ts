@@ -11,6 +11,7 @@ type LibrespotControllerLike = {
   trySeek: (positionMs: number) => Promise<boolean>;
   getStatus?: () => "unavailable" | "starting" | "ready" | "not-found";
   isBinaryAvailable?: () => boolean;
+  command?: (name: string, params?: Record<string, unknown>) => Promise<void>;
 };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -153,8 +154,9 @@ export function createPlayerCommands(args: {
     });
 
     const librespotId = args.librespotController.getDeviceId();
-    if (librespotId && deviceId === librespotId)
-      args.librespotController.setPreferred(true);
+    args.librespotController.setPreferred(
+      Boolean(librespotId && deviceId === librespotId),
+    );
 
     void args.refreshPlayback();
   };
@@ -175,6 +177,8 @@ export function createPlayerCommands(args: {
     );
     const prevProgress = state.progress;
     playerStore.setOptimisticSeek(pct);
+
+    if (await args.librespotController.trySeek(positionMs)) return;
 
     const activeDeviceId = await getActiveDeviceId(token);
     const qs = activeDeviceId
@@ -207,6 +211,10 @@ export function createPlayerCommands(args: {
     }
 
     const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("play");
+      return;
+    }
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
 
     try {
@@ -236,6 +244,10 @@ export function createPlayerCommands(args: {
     }
 
     const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("pause");
+      return;
+    }
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
 
     try {
@@ -264,6 +276,10 @@ export function createPlayerCommands(args: {
     if (!token) return;
 
     const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("next");
+      return;
+    }
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
 
     try {
@@ -286,6 +302,10 @@ export function createPlayerCommands(args: {
     if (!token) return;
 
     const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("previous");
+      return;
+    }
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
 
     try {
@@ -308,6 +328,10 @@ export function createPlayerCommands(args: {
     if (!token) return;
 
     const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("load", { uris: [uri], play: true });
+      return;
+    }
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
 
     await runPlayerCommand(token, {
@@ -323,13 +347,21 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken();
     if (!token) return;
 
-    const preferred = args.librespotController.getPreferredDeviceId();
-    const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
-
-    // Set shuffle state BEFORE starting playback so the context is shuffled from the start
-    // Always send the shuffle command to ensure Spotify's state matches our desired state
     const desiredShuffle =
       localStorage.getItem("muffle_shuffle_enabled") === "true";
+
+    const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("load", {
+        contextUri: playlistUri,
+        offsetIndex: Math.max(0, position | 0),
+        shuffle: desiredShuffle,
+        play: true,
+      });
+      return;
+    }
+    const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
+
     try {
       await runPlayerCommand(token, {
         method: "PUT",
@@ -337,7 +369,6 @@ export function createPlayerCommands(args: {
       });
       playerStore.setShuffle(desiredShuffle);
     } catch {
-      // If shuffle fails, still try to play - shuffle state may already be correct
     }
 
     await runPlayerCommand(token, {
@@ -357,13 +388,15 @@ export function createPlayerCommands(args: {
     const token = await args.ensureFreshToken();
     if (!token) return;
 
-    const preferred = args.librespotController.getPreferredDeviceId();
-    const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
-
-    // Set shuffle state BEFORE starting playback so the context is shuffled from the start
-    // Always send the shuffle command to ensure Spotify's state matches our desired state
     const desiredShuffle =
       localStorage.getItem("muffle_shuffle_enabled") === "true";
+    const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("load", { contextUri, shuffle: desiredShuffle, play: true });
+      return;
+    }
+    const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
+
     try {
       await runPlayerCommand(token, {
         method: "PUT",
@@ -371,7 +404,6 @@ export function createPlayerCommands(args: {
       });
       playerStore.setShuffle(desiredShuffle);
     } catch {
-      // If shuffle fails, still try to play - shuffle state may already be correct
     }
 
     await runPlayerCommand(token, {
@@ -391,6 +423,10 @@ export function createPlayerCommands(args: {
     if (!clean.length) return;
 
     const preferred = args.librespotController.getPreferredDeviceId();
+    if (preferred && preferred === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("load", { uris: clean, play: true });
+      return;
+    }
     const qs = preferred ? `?device_id=${encodeURIComponent(preferred)}` : "";
 
     await runPlayerCommand(token, {
@@ -419,6 +455,10 @@ export function createPlayerCommands(args: {
     }
 
     try {
+      if (args.librespotController.getPreferredDeviceId() === args.librespotController.getDeviceId() && args.librespotController.command) {
+        await args.librespotController.command("shuffle", { enabled });
+        return;
+      }
       await runPlayerCommand(token, {
         method: "PUT",
         path: `/me/player/shuffle?state=${enabled ? "true" : "false"}`,
@@ -438,6 +478,11 @@ export function createPlayerCommands(args: {
     const volume = Math.max(0, Math.min(100, Math.round(pct)));
     playerStore.setVolume(volume);
 
+    if (args.librespotController.getPreferredDeviceId() === args.librespotController.getDeviceId() && args.librespotController.command) {
+      await args.librespotController.command("volume", { volume: Math.round((volume / 100) * 65535) });
+      return;
+    }
+
     const activeDeviceId = await getActiveDeviceId(token);
     const device = activeDeviceId
       ? `&device_id=${encodeURIComponent(activeDeviceId)}`
@@ -450,11 +495,34 @@ export function createPlayerCommands(args: {
     void args.refreshPlayback();
   };
 
+  const setRepeat = async (mode: "off" | "all" | "one") => {
+    const previous = get(playerStore).repeat;
+    playerStore.setRepeat(mode);
+    try {
+      if (args.librespotController.getPreferredDeviceId() === args.librespotController.getDeviceId() && args.librespotController.command) {
+        await args.librespotController.command("repeat", {
+          mode: mode === "all" ? "context" : mode === "one" ? "track" : "off",
+        });
+        return;
+      }
+      const token = await args.ensureFreshToken();
+      if (!token) return;
+      await runPlayerCommand(token, {
+        method: "PUT",
+        path: `/me/player/repeat?state=${mode === "all" ? "context" : mode === "one" ? "track" : "off"}`,
+      });
+    } catch (error) {
+      playerStore.setRepeat(previous);
+      throw error;
+    }
+  };
+
   return {
     getDevices,
     transferToDevice,
     seekToPercent,
     setVolumePercent,
+    setRepeat,
     play,
     pause,
     next,

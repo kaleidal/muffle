@@ -1,242 +1,196 @@
 <script lang="ts">
-  import { fly, fade } from 'svelte/transition'
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy } from 'svelte'
+  import { searchSpotify, type SearchResults } from '../stores/spotify/search'
+  import { image, type HomeTrack } from '../stores/spotify/home'
   import { spotifyStore } from '../stores/spotify'
-  import { playerStore } from '../stores/playerStore'
+  import { navigationStore } from '../stores/navigationStore'
   import AddToPlaylistModal from './AddToPlaylistModal.svelte'
+  import { mapToPlayableTrack, type PlayableTrack } from '../stores/spotify/mappers'
 
-  export let query: string
+  let { query }: { query: string } = $props()
+  let loading = $state(false)
+  let error = $state<string | null>(null)
+  let results = $state.raw<SearchResults | null>(null)
+  let request = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let addOpen = $state(false)
+  let addTrack = $state.raw<PlayableTrack | null>(null)
 
-  type SearchTrack = {
-    id: string
-    name: string
-    artist: string
-    album: string
-    albumArt: string
-    duration: number
-    uri: string
-  }
-
-  let loading = false
-  let error: string | null = null
-  let results: SearchTrack[] = []
-
-  let debounce: ReturnType<typeof setTimeout> | null = null
-
-  let menu:
-    | null
-    | {
-        x: number
-        y: number
-        track: SearchTrack
-      } = null
-
-  let addOpen = false
-  let addTrack: SearchTrack | null = null
-
-  const closeMenu = () => {
-    menu = null
-  }
-
-  onMount(() => {
-    const onGlobal = () => closeMenu()
-    window.addEventListener('click', onGlobal)
-    window.addEventListener('blur', onGlobal)
-    return () => {
-      window.removeEventListener('click', onGlobal)
-      window.removeEventListener('blur', onGlobal)
-    }
-  })
-
-  onDestroy(() => closeMenu())
-
-  const formatTime = (ms: number) => {
-    const total = Math.max(0, Math.floor(ms / 1000))
-    const m = Math.floor(total / 60)
-    const s = total % 60
-    return `${m}:${String(s).padStart(2, '0')}`
-  }
-
-  const run = async (q: string) => {
-    const trimmed = q.trim()
-    if (!trimmed) {
-      results = []
-      error = null
+  $effect(() => {
+    const value = query.trim()
+    if (timer) clearTimeout(timer)
+    if (!value) {
+      results = null
       loading = false
       return
     }
+    timer = setTimeout(() => void run(value), 220)
+  })
 
+  onDestroy(() => {
+    if (timer) clearTimeout(timer)
+  })
+
+  async function run(value: string) {
+    const serial = ++request
     loading = true
     error = null
-
     try {
-      results = await spotifyStore.searchTracks(trimmed)
-    } catch (e: any) {
-      error = e?.message || 'Search failed'
-      results = []
+      const next = await searchSpotify(value)
+      if (serial === request) results = next
+    } catch (cause) {
+      if (serial === request) error = String((cause as Error)?.message || cause)
     } finally {
-      loading = false
+      if (serial === request) loading = false
     }
   }
 
-  $: {
-    if (debounce) clearTimeout(debounce)
-    debounce = setTimeout(() => {
-      void run(query)
-    }, 240)
-  }
-
-  async function playTrack(t: SearchTrack) {
-    try {
-      if (t) playerStore.setOptimisticTrack(t)
-      await spotifyStore.playTrackUri(t.uri)
-    } catch (e) {
-      console.error('Play track failed:', e)
-    }
-  }
-
-  function openTrackMenu(e: MouseEvent, t: SearchTrack) {
-    e.preventDefault()
-    e.stopPropagation()
-    menu = { x: e.clientX, y: e.clientY, track: t }
-  }
-
-  function openAddModal(e: MouseEvent, t: SearchTrack) {
-    e.preventDefault()
-    e.stopPropagation()
-    addTrack = t
-    addOpen = true
+  function artists(track: HomeTrack) {
+    return track.artists.map((artist) => artist.name).join(', ')
   }
 </script>
 
-<div
-  class="bg-[#141414] rounded-[40px] h-full px-8 py-6 flex flex-col overflow-hidden absolute inset-0"
-  in:fly={{ x: 18, duration: 220 }}
-  out:fade={{ duration: 140 }}
->
-  <div class="shrink-0">
-    <p class="text-white/60 text-sm font-semibold tracking-wide">Search</p>
-    <h2 class="text-white text-5xl font-extrabold tracking-tight leading-none truncate">{query.trim().length ? query : 'Type to search'}</h2>
-  </div>
+<section class="search-page">
+  <header>
+    <h1>{query.trim() || 'Find something'}</h1>
+  </header>
 
-  <div class="mt-6 flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+  <div class="results scrollbar-hide">
     {#if loading}
-      <div class="px-4 py-8 text-white/40 text-sm font-semibold">Searching…</div>
+      <div class="loading-grid">{#each Array(10) as _, index (index)}<div></div>{/each}</div>
     {:else if error}
-      <div class="px-4 py-8 text-white/40 text-sm font-semibold">{error}</div>
-    {:else if results.length}
-      <div class="flex flex-col">
-        {#each results as t, i (`${t.uri}-${i}`)}
-          <div
-            class="px-4 py-3 rounded-3xl hover:bg-white/5 transition-colors flex items-center gap-4 text-left"
-            role="button"
-            tabindex="0"
-            aria-label={`Play ${t.name}`}
-            onclick={() => playTrack(t)}
-            onkeydown={(e) => {
-              if (e.key !== 'Enter' && e.key !== ' ') return
-              void playTrack(t)
-            }}
-            oncontextmenu={(e) => openTrackMenu(e, t)}
-          >
-            <div class="w-12 h-12 rounded-2xl overflow-hidden bg-white/5 shrink-0">
-              {#if t.albumArt}
-                <img src={t.albumArt} alt={t.album} class="w-full h-full object-cover" />
-              {/if}
-            </div>
-
-            <div class="min-w-0 flex-1">
-              <div class="text-white font-extrabold tracking-tight truncate">{t.name}</div>
-              <div class="text-white/50 text-sm font-semibold truncate">{t.artist}</div>
-            </div>
-
-            <div class="text-white/40 text-sm font-semibold tabular-nums shrink-0">{formatTime(t.duration)}</div>
-
-            <button
-              class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center bouncy-btn shrink-0"
-              aria-label="Add to playlist"
-              onclick={(e) => openAddModal(e, t)}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M8 12H16M12 8V16M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"
-                  stroke="white"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
+      <div class="empty"><h2>Search failed</h2><p>{error}</p></div>
+    {:else if results}
+      {#if results.tracks.length}
+        <section class="songs">
+          <h2>Songs</h2>
+          <div>
+            {#each results.tracks.slice(0, 6) as track, index (track.id)}
+              <div class="song-row" role="button" tabindex="0" onclick={() => spotifyStore.playTrackUri(track.uri)} onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') void spotifyStore.playTrackUri(track.uri) }}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <img src={image(track.album.images)} alt={track.album.name} />
+                <span class="song-copy"><strong>{track.name}</strong><small>{artists(track)}</small></span>
+                <small>{track.album.name}</small>
+                <span class="song-actions">
+                  <button onclick={(event) => { event.stopPropagation(); void spotifyStore.enqueueUri(track.uri) }} aria-label={`Add ${track.name} to queue`} title="Add to queue">+</button>
+                  <button onclick={(event) => { event.stopPropagation(); addTrack = mapToPlayableTrack(track); addOpen = true }} aria-label={`Add ${track.name} to a playlist`} title="Add to playlist">•••</button>
+                </span>
+              </div>
+            {/each}
           </div>
-        {/each}
-      </div>
-    {:else if query.trim().length}
-      <div class="px-4 py-8 text-white/40 text-sm font-semibold">No results</div>
+        </section>
+      {/if}
+
+      {#if results.artists.length}
+        <section>
+          <h2>Artists</h2>
+          <div class="people shelf">
+            {#each results.artists as artist (artist.id)}
+              <button onclick={() => navigationStore.openEntity('artist', artist.id)}><img src={image(artist.images)} alt={artist.name}/><strong>{artist.name}</strong><span>Artist</span></button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if results.albums.length}
+        <section>
+          <h2>Albums</h2>
+          <div class="shelf">
+            {#each results.albums as album (album.id)}
+              <button onclick={() => navigationStore.openEntity('album', album.id)}><img src={image(album.images)} alt={album.name}/><strong>{album.name}</strong><span>{album.artists.map((artist) => artist.name).join(', ')}</span></button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if results.playlists.length}
+        <section>
+          <h2>Playlists</h2>
+          <div class="shelf">
+            {#each results.playlists as playlist (playlist.id)}
+              <button onclick={() => navigationStore.openPlaylist(playlist.id)}><img src={image(playlist.images)} alt={playlist.name}/><strong>{playlist.name}</strong><span>{playlist.owner?.display_name || 'Playlist'}</span></button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if results.shows.length}
+        <section>
+          <h2>Podcasts</h2>
+          <div class="shelf">
+            {#each results.shows as show (show.id)}
+              <button onclick={() => navigationStore.openEntity('show', show.id)}><img src={image(show.images)} alt={show.name}/><strong>{show.name}</strong><span>{show.publisher || 'Podcast'}</span></button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if results.episodes.length}
+        <section>
+          <h2>Episodes</h2>
+          <div class="episode-results">
+            {#each results.episodes as episode (episode.id)}
+              <button onclick={() => spotifyStore.playTrackUri(episode.uri)}>
+                <img src={image(episode.images)} alt={episode.name} />
+                <span><strong>{episode.name}</strong><small>{episode.show?.name || 'Podcast episode'}</small></span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if !results.tracks.length && !results.artists.length && !results.albums.length && !results.playlists.length && !results.shows.length && !results.episodes.length}
+        <div class="empty"><h2>No matches</h2><p>Try a title, artist, album, playlist, or podcast.</p></div>
+      {/if}
     {:else}
-      <div class="px-4 py-8 text-white/40 text-sm font-semibold">Start typing in the search bar</div>
+      <div class="empty"><h2>Search all of Spotify</h2><p>Songs, artists, albums, playlists, podcasts, and episodes.</p></div>
     {/if}
   </div>
+</section>
 
-  {#if menu}
-    <div
-      class="fixed inset-0 z-60"
-      role="button"
-      tabindex="0"
-      aria-label="Close menu"
-      onclick={() => (menu = null)}
-      onkeydown={(e) => {
-        if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') menu = null
-      }}
-    >
-      <div
-        class="absolute w-56 bg-[#141414] rounded-3xl p-3 shadow-xl border border-white/10 z-30"
-        style={`left:${menu.x}px; top:${menu.y}px;`}
-        role="dialog"
-        tabindex="-1"
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => {
-          if (e.key === 'Escape') menu = null
-        }}
-      >
-        <p class="text-white/60 text-xs font-semibold px-2 pb-2">QUEUE</p>
-        <div
-          class="w-full text-left px-3 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-semibold bouncy-btn cursor-pointer"
-          role="menuitem"
-          tabindex="0"
-          onclick={() => {
-            const track = menu?.track
-            if (track) spotifyStore.enqueueTrack(track as any)
-            menu = null
-          }}
-          onkeydown={(e) => {
-            if (e.key !== 'Enter' && e.key !== ' ') return
-            const track = menu?.track
-            if (track) spotifyStore.enqueueTrack(track as any)
-            menu = null
-          }}
-        >
-          Add to queue
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <AddToPlaylistModal
-    open={addOpen}
-    track={addTrack}
-    onClose={() => {
-      addOpen = false
-      addTrack = null
-    }}
-  />
-</div>
+<AddToPlaylistModal open={addOpen} track={addTrack} onClose={() => { addOpen = false; addTrack = null }} />
 
 <style>
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
+  .search-page { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; padding: 2rem 2.3rem; border-radius: 2.5rem; background: #121212; color: white; }
+  h1 { margin: 0 0 1.5rem; font-size: clamp(2.5rem,5vw,4.5rem); line-height: .95; letter-spacing: -.06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .results { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 2rem; }
+  section + section { margin-top: 2.2rem; }
+  h2 { margin: 0 0 .9rem; font-size: 1.3rem; letter-spacing: -.025em; }
+  .songs > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; }
+  .song-row { display: grid; grid-template-columns: 1.7rem 3.5rem minmax(0,1fr) minmax(5rem,.55fr) auto; align-items: center; gap: .75rem; min-width: 0; padding: .55rem; border-radius: 1.1rem; color: white; text-align: left; transition: background .18s ease, transform .18s ease; cursor: pointer; }
+  .song-row:hover { background: rgba(255,255,255,.06); transform: translateX(3px); }
+  .song-row > span:first-child, .song-row > small { color: rgba(255,255,255,.35); font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .songs img { width: 3.5rem; aspect-ratio: 1; object-fit: cover; border-radius: .9rem; }
+  .song-copy { min-width: 0; display: grid; }
+  .song-copy strong, .song-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .song-copy small { color: rgba(255,255,255,.4); font-size: .73rem; }
+  .song-actions { display: flex; gap: .3rem; opacity: .3; transition: opacity .18s ease; }
+  .song-row:hover .song-actions { opacity: 1; }
+  .song-actions button { display: grid; place-items: center; width: 2rem; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.08); color: white; font-weight: 800; }
+  .song-actions button:hover { background: white; color: #090909; }
+  .shelf { display: grid; grid-auto-flow: column; grid-auto-columns: 10rem; gap: .9rem; overflow-x: auto; padding-bottom: .5rem; }
+  .shelf button { min-width: 0; color: white; text-align: left; }
+  .shelf img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 1.4rem; transition: transform .25s ease; }
+  .shelf.people img { border-radius: 50%; }
+  .shelf button:hover img { transform: translateY(-5px) scale(1.01); }
+  .shelf strong, .shelf span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .shelf strong { margin-top: .6rem; font-size: .85rem; }
+  .shelf span { margin-top: .15rem; color: rgba(255,255,255,.4); font-size: .73rem; }
+  .episode-results { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .55rem; }
+  .episode-results button { display: grid; grid-template-columns: 3.6rem minmax(0,1fr) 2.2rem; align-items: center; gap: .8rem; padding: .55rem; border-radius: 1.1rem; color: white; text-align: left; transition: background .18s ease; }
+  .episode-results button:hover { background: rgba(255,255,255,.06); }
+  .episode-results img { width: 3.6rem; aspect-ratio: 1; object-fit: cover; border-radius: .9rem; }
+  .episode-results span { min-width: 0; display: grid; }
+  .episode-results strong, .episode-results small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .episode-results small { color: rgba(255,255,255,.4); }
+  .episode-results svg { width: 1rem; fill: currentColor; opacity: .35; }
+  .loading-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 1rem; }
+  .loading-grid div { aspect-ratio: 1; border-radius: 1.4rem; background: #1c1c1c; animation: breathe 1.5s ease infinite; }
+  .empty { min-height: 18rem; display: grid; place-content: center; justify-items: center; text-align: center; }
+  .empty h2 { margin: 0; font-size: 1.8rem; letter-spacing: -.04em; }
+  .empty p { color: rgba(255,255,255,.42); }
+  @keyframes breathe { 50% { background: #222; } }
+  @media (max-width: 1120px) { .songs > div, .episode-results { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .search-page { padding: 1.5rem; } .song-row { grid-template-columns: 1.7rem 3.5rem minmax(0,1fr) auto; } .song-row > small { display: none; } }
 </style>
