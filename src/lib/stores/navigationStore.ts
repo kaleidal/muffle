@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store'
 
-export type PageName = 'home' | 'playlist' | 'search' | 'lyrics' | 'library' | 'settings' | 'entity'
+export type PageName = 'home' | 'playlist' | 'search' | 'lyrics' | 'settings' | 'entity'
 export type EntityType = 'artist' | 'album' | 'show'
 
 export type NavigationState = {
@@ -52,10 +52,6 @@ function createNavigationStore() {
 
     openLikedSongs() {
       navigate((state) => ({ ...state, page: 'playlist', playlistId: 'liked', searchQuery: '', entityType: null, entityId: null }))
-    },
-
-    openLibrary() {
-      navigate((state) => ({ ...state, page: 'library', searchQuery: '', playlistId: null, entityType: null, entityId: null }))
     },
 
     openSettings() {

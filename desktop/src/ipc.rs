@@ -86,10 +86,14 @@ pub fn attach(mut window: SabineWindow, app: Arc<AppState>) -> SabineWindow {
         |app, command| {
             let request: ApiRequest = serde_json::from_value(command.params)
                 .map_err(|error| BridgeError::new(format!("invalid Spotify request: {error}")))?;
-            app.runtime
-                .block_on(app.api.request(request))
-                .map_err(BridgeError::new)
-                .and_then(respond)
+            let result = app.runtime.block_on(app.api.request(request));
+            if result
+                .as_ref()
+                .is_err_and(|error| error.contains("403") && error.to_lowercase().contains("scope"))
+            {
+                app.sign_out();
+            }
+            result.map_err(BridgeError::new).and_then(respond)
         },
     );
     window = register(

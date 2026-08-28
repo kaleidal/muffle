@@ -139,7 +139,12 @@ impl AppState {
         open::that_detached(&flow.url).context("unable to open Spotify sign-in")?;
         let code = auth::wait_for_code(listener, &flow.state).await?;
         let response = auth::exchange_code(&self.http, &grant, &code, &flow.verifier).await?;
-        let token = StoredToken::from_response(&grant.client_id, response, None)?;
+        let requested_scope = grant.scopes.join(" ");
+        let token =
+            StoredToken::from_response(&grant.client_id, response, None, Some(&requested_scope))?;
+        if !token.grants(auth::WEB_SCOPES) {
+            anyhow::bail!("Spotify did not grant all requested permissions");
+        }
         self.api.set_token(token).await?;
         Ok(())
     }

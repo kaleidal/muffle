@@ -8,7 +8,7 @@ Muffle is a fast, expressive Spotify desktop client built with Svelte and Sabine
 
 - Home recommendations, mixes, recently played music, releases, artists, podcasts, and personal playlists
 - Search across tracks, artists, albums, playlists, shows, and episodes
-- Full library views for saved music, followed artists, playlists, and podcasts
+- A streaming playlist sidebar and paged playlist tracks that stay responsive with large libraries
 - Artist, album, show, playlist, and Liked Songs pages
 - Local high-quality playback with gapless playback, autoplay, normalisation, repeat, shuffle, queue control, audio caching, and Spotify Connect device transfer
 - Native OAuth with PKCE, system media controls on Linux, single-instance handling, tray behaviour, and native playlist cover selection

@@ -9,11 +9,12 @@ import { createPolling } from './store/polling'
 import { createLibrespotController } from './librespot'
 import { createPlayerCommands } from './store/playerCommands'
 import {
-  fetchAllPlaylists,
+  fetchPlaylistsPage,
   fetchTopArtists,
   createPlaylist,
   getLikedSongsView,
   getPlaylistView,
+  getPlaylistItemsPage,
   isTrackInLiked,
   playlistContainsTrackUri,
   renamePlaylist,
@@ -139,9 +140,9 @@ function createSpotifyStore() {
     try {
       const me = await apiGet<SpotifyUser>(token, '/me')
 
-      const [playlistsRes, topArtistsRes] = await Promise.allSettled([fetchAllPlaylists(token), fetchTopArtists(token)])
+      const [playlistsRes, topArtistsRes] = await Promise.allSettled([fetchPlaylistsPage(token), fetchTopArtists(token)])
 
-      const playlists = playlistsRes.status === 'fulfilled' ? playlistsRes.value || [] : []
+      const playlistPage = playlistsRes.status === 'fulfilled' ? playlistsRes.value : { items: [], next: null }
       const topArtists = topArtistsRes.status === 'fulfilled' ? topArtistsRes.value || [] : []
 
       update((s) => ({
@@ -149,7 +150,9 @@ function createSpotifyStore() {
         status: 'authenticated',
         error: null,
         user: me,
-        playlists,
+        playlists: playlistPage.items,
+        playlistsNext: playlistPage.next,
+        playlistsLoading: false,
         topArtists
       }))
 
@@ -181,10 +184,33 @@ function createSpotifyStore() {
     const token = await ensureFreshToken()
     if (!token) return
     try {
-      const playlists = await fetchAllPlaylists(token)
-      update((state) => ({ ...state, playlists }))
+      const page = await fetchPlaylistsPage(token)
+      update((state) => ({ ...state, playlists: page.items, playlistsNext: page.next, playlistsLoading: false }))
     } catch {
       update((state) => ({ ...state, error: 'Could not refresh playlists' }))
+    }
+  }
+
+  const loadMorePlaylists = async () => {
+    const state = get({ subscribe })
+    if (!state.playlistsNext || state.playlistsLoading) return
+    const token = await ensureFreshToken()
+    if (!token) return
+    update((current) => ({ ...current, playlistsLoading: true }))
+    try {
+      const page = await fetchPlaylistsPage(token, state.playlistsNext)
+      update((current) => {
+        const known = new Set(current.playlists.map((playlist) => playlist.id))
+        const incoming = page.items.filter((playlist) => !known.has(playlist.id))
+        return {
+          ...current,
+          playlists: [...current.playlists, ...incoming],
+          playlistsNext: page.next,
+          playlistsLoading: false,
+        }
+      })
+    } catch (error) {
+      update((current) => ({ ...current, playlistsLoading: false, error: String((error as Error)?.message || error) }))
     }
   }
 
@@ -235,6 +261,7 @@ function createSpotifyStore() {
     },
 
     refreshPlaylists,
+    loadMorePlaylists,
 
     async createPlaylist(name: string) {
       const token = await ensureFreshToken()
@@ -378,6 +405,12 @@ function createSpotifyStore() {
         }
         throw e
       }
+    },
+
+    async getPlaylistItemsPage(url: string) {
+      const token = await ensureFreshToken()
+      if (!token) throw new Error('Not authenticated')
+      return await getPlaylistItemsPage(token, url)
     },
 
     async logout() {

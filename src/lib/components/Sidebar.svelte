@@ -48,19 +48,16 @@
 
 <aside class="w-24 shrink-0 h-full min-h-0">
   <div class="h-full min-h-0 bg-(--bg-secondary) rounded-3xl p-3 flex flex-col items-center gap-3 overflow-y-auto">
-    <div class="w-full flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide pt-2 pb-2">
+    <div
+      class="w-full flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide pt-2 pb-2"
+      onscroll={(event) => {
+        const viewport = event.currentTarget
+        if (viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 280) {
+          void spotifyStore.loadMorePlaylists()
+        }
+      }}
+    >
       {#if $spotifyStore.status === 'authenticated'}
-        <button
-          class="relative aspect-square rounded-2xl overflow-hidden fluid-card group shrink-0 bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center"
-          aria-label="Your library"
-          title="Your library"
-          onclick={() => navigationStore.openLibrary()}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 4v16M9 4v16M14 7v13M19 5v15" stroke="white" stroke-width="2" stroke-linecap="round" />
-          </svg>
-        </button>
-
         <button
           class="relative aspect-square rounded-2xl overflow-hidden fluid-card group shrink-0 bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center"
           aria-label="Liked Songs"
@@ -102,7 +99,7 @@
             aria-label={playlist.name}
             onclick={() => navigationStore.openPlaylist(playlist.id)}
           >
-            <img src={playlist.image} alt={playlist.name} class="w-full h-full object-contain bg-white/5" />
+            <img src={playlist.image} alt={playlist.name} loading="lazy" decoding="async" class="w-full h-full object-cover bg-white/5" />
 
             <div class="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </button>
@@ -111,6 +108,10 @@
         {#each placeholders as i (i)}
           <div class="aspect-square rounded-2xl bg-white/5 shrink-0"></div>
         {/each}
+      {/if}
+
+      {#if $spotifyStore.playlistsLoading}
+        <div class="aspect-square rounded-2xl bg-white/5 shrink-0 animate-pulse" aria-label="Loading more playlists"></div>
       {/if}
     </div>
   </div>

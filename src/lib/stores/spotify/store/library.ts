@@ -9,46 +9,21 @@ import type {
 } from '../types'
 import { mapToPlayableTrack, type PlayableTrack } from '../mappers'
 
-export async function fetchAllPlaylists(token: string) {
-  const items: SpotifyPlaylist[] = []
-  let page = await apiGet<SpotifyPaging<SpotifyPlaylist>>(token, '/me/playlists?limit=50')
-  items.push(...(page.items || []))
-
-  let guard = 0
-  while (page.next && guard < 20) {
-    guard += 1
-    page = await apiGetUrl<SpotifyPaging<SpotifyPlaylist>>(token, page.next)
-    items.push(...(page.items || []))
-  }
-
-  return items
+export async function fetchPlaylistsPage(token: string, url = '/me/playlists?limit=50') {
+  const page = url.startsWith('http')
+    ? await apiGetUrl<SpotifyPaging<SpotifyPlaylist>>(token, url)
+    : await apiGet<SpotifyPaging<SpotifyPlaylist>>(token, url)
+  return { items: page.items ?? [], next: page.next ?? null }
 }
 
 export async function getPlaylistView(token: string, playlistId: string) {
-  const meta = await apiGet<SpotifyPlaylistMeta>(token, `/playlists/${encodeURIComponent(playlistId)}?market=from_token`)
-
-  const tracks: PlayableTrack[] = []
-  let page = await apiGet<SpotifyPlaylistTracksPage>(
-    token,
-    `/playlists/${encodeURIComponent(playlistId)}/items?limit=100&market=from_token&additional_types=track,episode`
-  )
-
-  const push = (p: SpotifyPlaylistTracksPage) => {
-    for (const it of p.items || []) {
-      const item = (it as typeof it & { item?: typeof it.track }).item ?? it.track
-      if (!item) continue
-      tracks.push(mapToPlayableTrack(item))
-    }
-  }
-
-  push(page)
-
-  let guard = 0
-  while (page.next && guard < 20) {
-    guard += 1
-    page = await apiGetUrl<SpotifyPlaylistTracksPage>(token, page.next)
-    push(page)
-  }
+  const [meta, page] = await Promise.all([
+    apiGet<SpotifyPlaylistMeta>(token, `/playlists/${encodeURIComponent(playlistId)}?market=from_token`),
+    apiGet<SpotifyPlaylistTracksPage>(
+      token,
+      `/playlists/${encodeURIComponent(playlistId)}/items?limit=50&market=from_token&additional_types=track,episode`,
+    ),
+  ])
 
   return {
     id: meta.id,
@@ -58,29 +33,14 @@ export async function getPlaylistView(token: string, playlistId: string) {
     images: meta.images || [],
     ownerName: meta.owner?.display_name || 'Spotify',
     ownerId: meta.owner?.id || null,
-    tracks
+    tracks: mapPlaylistItems(page),
+    next: page.next ?? null,
+    total: page.total ?? meta.tracks?.total ?? page.items?.length ?? 0,
   }
 }
 
 export async function getLikedSongsView(token: string) {
-  const tracks: PlayableTrack[] = []
-  let page = await apiGet<SpotifySavedTracksPage>(token, '/me/tracks?limit=50&market=from_token')
-
-  const push = (p: SpotifySavedTracksPage) => {
-    for (const it of p.items || []) {
-      if (!it?.track) continue
-      tracks.push(mapToPlayableTrack(it.track))
-    }
-  }
-
-  push(page)
-
-  let guard = 0
-  while (page.next && guard < 10) {
-    guard += 1
-    page = await apiGetUrl<SpotifySavedTracksPage>(token, page.next)
-    push(page)
-  }
+  const page = await apiGet<SpotifySavedTracksPage>(token, '/me/tracks?limit=50&market=from_token')
 
   return {
     id: 'liked',
@@ -90,8 +50,28 @@ export async function getLikedSongsView(token: string) {
     ownerName: 'You',
     ownerId: null,
     snapshotId: null,
-    tracks
+    tracks: mapPlaylistItems(page),
+    next: page.next ?? null,
+    total: page.total ?? page.items?.length ?? 0,
   }
+}
+
+export async function getPlaylistItemsPage(token: string, url: string) {
+  const page = await apiGetUrl<SpotifyPlaylistTracksPage | SpotifySavedTracksPage>(token, url)
+  return {
+    tracks: mapPlaylistItems(page),
+    next: page.next ?? null,
+    total: page.total,
+  }
+}
+
+function mapPlaylistItems(page: SpotifyPlaylistTracksPage | SpotifySavedTracksPage) {
+  const tracks: PlayableTrack[] = []
+  for (const entry of page.items ?? []) {
+    const item = 'item' in entry ? entry.item ?? entry.track : entry.track
+    if (item) tracks.push(mapToPlayableTrack(item))
+  }
+  return tracks
 }
 
 export async function fetchTopArtists(token: string) {

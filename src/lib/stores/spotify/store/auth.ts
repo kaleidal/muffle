@@ -24,6 +24,8 @@ export function safeLogout(deps: Deps, message?: string) {
     expiresAt: null,
     user: null,
     playlists: [],
+    playlistsNext: null,
+    playlistsLoading: false,
     topArtists: [],
     current: null,
   })

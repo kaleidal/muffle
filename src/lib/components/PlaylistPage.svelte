@@ -29,11 +29,15 @@
         uri: string;
         snapshotId: string | null;
         tracks: PlaylistTrack[];
+        next: string | null;
+        total: number;
     };
 
     let loading = $state(true);
+    let loadingMore = $state(false);
     let error = $state<string | null>(null);
     let data = $state.raw<PlaylistView | null>(null);
+    let loadVersion = 0;
 
     let busy = $state(false);
     let playLoading = $state(false);
@@ -71,15 +75,19 @@
     };
 
     const load = async () => {
+        const version = ++loadVersion;
+        const requestedPlaylistId = playlistId;
         loading = true;
+        loadingMore = false;
         error = null;
         data = null;
 
         try {
-            const liked = playlistId === "liked";
+            const liked = requestedPlaylistId === "liked";
             const res = liked
                 ? await spotifyStore.getLikedSongsView()
-                : await spotifyStore.getPlaylistView(playlistId);
+                : await spotifyStore.getPlaylistView(requestedPlaylistId);
+            if (version !== loadVersion) return;
             data = {
                 id: res.id,
                 name: res.name,
@@ -89,13 +97,48 @@
                 uri: res.uri,
                 snapshotId: res.snapshotId ?? null,
                 tracks: res.tracks,
+                next: res.next,
+                total: res.total,
             };
         } catch (e: any) {
-            error = e?.message || "Failed to load playlist";
+            if (version === loadVersion)
+                error = e?.message || "Failed to load playlist";
         } finally {
-            loading = false;
+            if (version === loadVersion) loading = false;
         }
     };
+
+    async function loadMore() {
+        if (!data?.next || loadingMore) return;
+        const version = loadVersion;
+        const next = data.next;
+        loadingMore = true;
+        try {
+            const page = await spotifyStore.getPlaylistItemsPage(next);
+            if (version !== loadVersion || !data) return;
+            data = {
+                ...data,
+                tracks: [...data.tracks, ...page.tracks],
+                next: page.next,
+                total: page.total ?? data.total,
+            };
+        } catch (cause) {
+            if (version === loadVersion)
+                error = String((cause as Error)?.message || cause);
+        } finally {
+            if (version === loadVersion) loadingMore = false;
+        }
+    }
+
+    function onPlaylistScroll(event: Event) {
+        const viewport = event.currentTarget as HTMLElement;
+        if (
+            viewport.scrollTop + viewport.clientHeight >=
+            viewport.scrollHeight - 700
+        ) {
+            void loadMore();
+        }
+    }
 
     $effect(() => {
         if (playlistId) void load();
@@ -418,7 +461,11 @@
             </div>
         </div>
 
-        <div class="mt-6 flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+        <div
+            class="mt-6 flex-1 min-h-0 overflow-y-auto scrollbar-hide"
+            aria-busy={loadingMore}
+            onscroll={onPlaylistScroll}
+        >
             <div class="flex flex-col">
                 {#each data.tracks as t, i (`${t.uri}-${i}`)}
                     <div
@@ -454,6 +501,8 @@
                                 <img
                                     src={t.albumArt}
                                     alt={t.album}
+                                    loading="lazy"
+                                    decoding="async"
                                     class="w-full h-full object-cover"
                                 />
                             {/if}
@@ -532,6 +581,16 @@
                     <div class="px-4 py-8 text-white/40 text-sm font-semibold">
                         No tracks
                     </div>
+                {/if}
+
+                {#if loadingMore}
+                    <div class="streaming-more" aria-label="Loading more tracks">
+                        <span></span><span></span><span></span>
+                    </div>
+                {:else if data.next}
+                    <button class="load-more" onclick={loadMore}>Load more tracks</button>
+                {:else if data.tracks.length}
+                    <p class="track-total">{data.total.toLocaleString()} tracks</p>
                 {/if}
             </div>
         </div>
@@ -621,12 +680,46 @@
         animation: spin 0.8s linear infinite;
     }
 
+    .streaming-more {
+        display: grid;
+        gap: 0.55rem;
+        padding: 0.8rem 1rem 1.2rem;
+    }
+    .streaming-more span {
+        height: 3.8rem;
+        border-radius: 1.5rem;
+        background: rgba(255, 255, 255, 0.045);
+        animation: breathe 1.25s ease-in-out infinite alternate;
+    }
+    .load-more {
+        align-self: center;
+        margin: 0.8rem auto 1.2rem;
+        padding: 0.7rem 1rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.72);
+        font-weight: 700;
+    }
+    .track-total {
+        margin: 0;
+        padding: 1rem 1rem 1.4rem;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.32);
+        font-size: 0.75rem;
+        font-weight: 650;
+    }
+
     @keyframes spin {
         from {
             transform: rotate(0deg);
         }
         to {
             transform: rotate(360deg);
+        }
+    }
+    @keyframes breathe {
+        to {
+            background: rgba(255, 255, 255, 0.075);
         }
     }
 </style>

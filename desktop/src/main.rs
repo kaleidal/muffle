@@ -17,7 +17,7 @@ use std::sync::{Arc, OnceLock};
 use app::AppState;
 use sabine::{
     SabineColor, SabineError, SabineLifecyclePolicy, SabineResult, SabineWindow,
-    SingleInstancePolicy, TrayIcon, TrayMenuItem, WindowRegionRect,
+    SingleInstancePolicy, TrayIcon, TrayMenuItem, WindowRegion, WindowRegionRect,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -25,6 +25,7 @@ const APP_ID: &str = "al.kaleid.muffle";
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 fn main() {
+    install_crypto_provider();
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::from_default_env().add_directive("muffle=info".parse().unwrap()),
@@ -44,6 +45,14 @@ fn main() {
             }
         },
     );
+}
+
+fn install_crypto_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("install rustls ring crypto provider");
+    }
 }
 
 fn configure(
@@ -81,6 +90,8 @@ fn platform_chrome(window: SabineWindow) -> SabineWindow {
 fn platform_chrome(window: SabineWindow) -> SabineWindow {
     window
         .frameless()
+        .transparent(true)
+        .input_region(WindowRegion::adaptive_rounded_rect(24))
         .titlebar_drag_region(40)
         .drag_exclusion_region(WindowRegionRect::new(0, 0, 300, 40))
         .drag_exclusion_region(WindowRegionRect::new(-150, 0, 150, 40))

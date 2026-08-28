@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
-use crate::auth::{self, StoredToken};
+use crate::auth::{self, StoredToken, WEB_SCOPES};
 
 const API_BASE: &str = "https://api.spotify.com/v1";
 
@@ -42,7 +42,10 @@ pub struct SpotifyApi {
 
 impl SpotifyApi {
     pub fn new(http: reqwest::Client, token_path: std::path::PathBuf) -> Self {
-        let token = StoredToken::load(&token_path);
+        let token = StoredToken::load(&token_path).filter(|token| token.grants(WEB_SCOPES));
+        if token.is_none() {
+            let _ = std::fs::remove_file(&token_path);
+        }
         Self {
             http,
             token: Arc::new(tokio::sync::Mutex::new(token)),
@@ -80,6 +83,7 @@ impl SpotifyApi {
                 &current.client_id,
                 response,
                 Some(&current.refresh_token),
+                Some(&current.scope),
             )
             .map_err(|error| error.to_string())?;
             updated

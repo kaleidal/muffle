@@ -99,7 +99,6 @@
         <section class="quick-section">
           <div class="section-heading">
             <h2>Back in rotation</h2>
-            <p>Your week, still warm</p>
           </div>
           <div class="quick-grid">
             {#each quickPicks as track (track.id)}
@@ -123,7 +122,6 @@
           <section class="chart">
             <div class="section-heading">
               <h2>On repeat</h2>
-              <p>The songs winning your attention</p>
             </div>
             <div class="track-list">
               {#each data.topTracks.slice(0, 7) as track, index (track.id)}
@@ -145,7 +143,6 @@
           <section class="artist-field">
             <div class="section-heading">
               <h2>Your orbit</h2>
-              <p>Artists pulling everything together</p>
             </div>
             <div class="artist-cloud">
               {#each data.topArtists.slice(0, 9) as artist, index (artist.id)}
@@ -163,7 +160,6 @@
         <section class="discovery">
           <div class="section-heading">
             <h2>A little left turn</h2>
-            <p>Picked from the music you keep returning to</p>
           </div>
           <div class="discovery-flow">
             {#each data.recommendations.slice(0, 10) as track, index (track.id)}
@@ -181,7 +177,6 @@
         <section class="album-shelf">
           <div class="section-heading">
             <h2>Albums you kept</h2>
-            <p>Worth hearing as a whole</p>
           </div>
           <div class="album-strip scrollbar-hide">
             {#each data.albums as album (album.id)}
@@ -201,7 +196,6 @@
             <section class="shows">
               <div class="section-heading">
                 <h2>Saved for later</h2>
-                <p>Podcasts waiting for the right hour</p>
               </div>
               <div class="show-stack">
                 {#each data.shows.slice(0, 5) as show (show.id)}
@@ -219,12 +213,10 @@
             <section class="playlist-wall">
               <div class="section-heading">
                 <h2>Your playlists</h2>
-                <p>Built by you and Spotify</p>
               </div>
               <div class="playlist-mosaic">
-                {#each data.playlists.slice(0, 8) as playlist, index (playlist.id)}
+                {#each data.playlists.slice(0, 8) as playlist (playlist.id)}
                   <button
-                    class:wide={index === 0 || index === 5}
                     onclick={() => navigationStore.openPlaylist(playlist.id)}
                   >
                     <img src={image(playlist.images)} alt={playlist.name} />
@@ -246,7 +238,7 @@
   .intro h1 { margin: 0 0 1.5rem; font-size: clamp(2.5rem, 5vw, 4.7rem); line-height: .95; letter-spacing: -.06em; }
   .hero { position: relative; min-height: 21rem; display: grid; grid-template-columns: minmax(0,1fr) minmax(18rem,.72fr); overflow: hidden; border-radius: 2.25rem; background: #162219; isolation: isolate; }
   .hero::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,20,14,.98) 5%, rgba(12,20,14,.77) 48%, rgba(12,20,14,.12)), var(--hero-art); background-position: center; background-size: cover; filter: saturate(.85); z-index: -2; }
-  .hero::after { content: ''; position: absolute; inset: 0; background: rgba(8,12,9,.18); backdrop-filter: blur(28px); mask-image: linear-gradient(90deg,#000 0%,#000 35%,transparent 78%); z-index: -1; }
+  .hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(8,12,9,.58),rgba(8,12,9,.12) 65%,transparent); z-index: -1; }
   .hero-copy { align-self: end; padding: 2.7rem; max-width: 36rem; }
   .hero-copy > span { color: rgba(255,255,255,.65); font-size: .86rem; font-weight: 650; }
   .hero h2 { margin: .35rem 0 .2rem; font-size: clamp(2.3rem,4.4vw,4.6rem); line-height: .94; letter-spacing: -.055em; text-wrap: balance; }
@@ -258,9 +250,8 @@
   .pulse-dot { width: .7rem; height: .7rem; border-radius: 50%; background: #17b95a; animation: pulse 1s ease infinite; }
   .hero-artwork { position: relative; min-height: 21rem; }
   .hero-artwork img { position: absolute; width: 14.5rem; aspect-ratio: 1; object-fit: cover; border-radius: 2rem; right: calc(2rem + var(--stack-index) * 4.8rem); top: calc(3.2rem + var(--stack-index) * 1.25rem); transform: rotate(calc((var(--stack-index) - 1) * 7deg)); box-shadow: 0 1.8rem 4rem rgba(0,0,0,.44); }
-  .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1.05rem; }
+  .section-heading { margin-bottom: 1.05rem; }
   .section-heading h2 { margin: 0; font-size: 1.35rem; letter-spacing: -.025em; }
-  .section-heading p { margin: 0; color: rgba(255,255,255,.42); font-size: .82rem; }
   .quick-section, .editorial-grid, .discovery, .album-shelf, .lower-grid { margin-top: 2.25rem; }
   .quick-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
   .quick-pick { display: grid; grid-template-columns: 4.2rem minmax(0,1fr) 2.6rem; align-items: center; gap: .85rem; padding: .55rem .7rem .55rem .55rem; border-radius: 1.35rem; background: #191919; color: white; text-align: left; transition: transform .2s ease, background .2s ease; }
@@ -317,9 +308,8 @@
   .show-stack strong, .show-stack small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .show-stack small { color: rgba(255,255,255,.4); margin-top: .16rem; }
   .show-stack svg { width: 1.1rem; fill: none; stroke: rgba(255,255,255,.42); stroke-width: 2; }
-  .playlist-mosaic { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); grid-auto-rows: 9rem; gap: .65rem; }
-  .playlist-mosaic button { position: relative; overflow: hidden; border-radius: 1.35rem; background: #222; color: white; text-align: left; }
-  .playlist-mosaic button.wide { grid-column: span 2; }
+  .playlist-mosaic { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .65rem; }
+  .playlist-mosaic button { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 1.35rem; background: #222; color: white; text-align: left; }
   .playlist-mosaic img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
   .playlist-mosaic button:hover img { transform: scale(1.05); }
   .playlist-mosaic span { position: absolute; inset: auto .65rem .65rem; padding: .45rem .6rem; border-radius: .75rem; background: rgba(6,6,6,.72); backdrop-filter: blur(12px); font-size: .75rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

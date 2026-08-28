@@ -76,7 +76,7 @@ function createPlayerStore() {
   const startTicking = () => {
     if (progressInterval) return;
     lastTickAt = Date.now();
-    progressInterval = setInterval(tick, 250);
+    progressInterval = setInterval(tick, 500);
   };
 
   const setTransitioning = () => {

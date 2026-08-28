@@ -21,17 +21,20 @@ function sanitizeQueue(args: { currentTrackId: string | null; incoming: NonNulla
 }
 
 export function fetchPlaybackOnceFactory(args: { updateCurrent: (current: SpotifyCurrentlyPlaying) => void }) {
+  let pollCount = 0
   return async function fetchPlaybackOnce(token: string) {
+    pollCount += 1
+    const refreshDetails = pollCount === 1 || pollCount % 3 === 0
     const [currentRes, queueRes, playerRes] = await Promise.allSettled([
       apiGet<SpotifyCurrentlyPlaying>(token, '/me/player/currently-playing'),
-      apiGet<SpotifyQueue>(token, '/me/player/queue'),
-      apiGet<SpotifyMePlayer>(token, '/me/player')
+      refreshDetails ? apiGet<SpotifyQueue>(token, '/me/player/queue') : Promise.resolve(null),
+      refreshDetails ? apiGet<SpotifyMePlayer>(token, '/me/player') : Promise.resolve(null),
     ])
 
     const current = currentRes.status === 'fulfilled' ? currentRes.value : ({ is_playing: false, progress_ms: 0, item: null } as any)
-    const queue = queueRes.status === 'fulfilled' ? queueRes.value : ({ currently_playing: null, queue: [] } as any)
+    const queue = queueRes.status === 'fulfilled' ? queueRes.value : null
 
-    if (playerRes.status === 'fulfilled' && typeof playerRes.value?.shuffle_state === 'boolean') {
+    if (playerRes.status === 'fulfilled' && playerRes.value && typeof playerRes.value.shuffle_state === 'boolean') {
       playerStore.setShuffleFromServer(playerRes.value.shuffle_state)
     }
 
@@ -40,7 +43,9 @@ export function fetchPlaybackOnceFactory(args: { updateCurrent: (current: Spotif
     const prevPlayer = get(playerStore)
 
     const currentTrack = current?.item ? mapToTrack(current.item) : current?.is_playing ? prevPlayer.currentTrack : null
-    const queueTracks = sanitizeQueue({ currentTrackId: currentTrack?.id ?? null, incoming: queue?.queue ?? [] })
+    const queueTracks = queue
+      ? sanitizeQueue({ currentTrackId: currentTrack?.id ?? null, incoming: queue.queue ?? [] })
+      : prevPlayer.queue
     const nextTrack = queueTracks[0] ?? null
 
     const progressPct =

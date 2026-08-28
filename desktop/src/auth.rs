@@ -17,7 +17,8 @@ const AUTHORIZE_URL: &str = "https://accounts.spotify.com/authorize";
 const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 const REDIRECT_PATH: &str = "/login";
 
-const WEB_SCOPES: &[&str] = &[
+pub const WEB_SCOPES: &[&str] = &[
+    "ugc-image-upload",
     "playlist-modify-private",
     "playlist-modify-public",
     "playlist-read-collaborative",
@@ -27,8 +28,11 @@ const WEB_SCOPES: &[&str] = &[
     "user-library-modify",
     "user-library-read",
     "user-modify-playback-state",
+    "user-read-currently-playing",
+    "user-read-email",
     "user-read-playback-position",
     "user-read-playback-state",
+    "user-read-private",
     "user-read-recently-played",
     "user-top-read",
 ];
@@ -145,7 +149,11 @@ pub async fn wait_for_code(listener: TcpListener, expected_state: &str) -> Resul
         );
         let _ = stream.write_all(response.as_bytes()).await;
         let _ = stream.shutdown().await;
-        if result.is_ok() {
+        let is_oauth_callback = request_line
+            .split_whitespace()
+            .nth(1)
+            .is_some_and(|target| target.split('?').next() == Some(REDIRECT_PATH));
+        if is_oauth_callback {
             return result;
         }
     }
@@ -271,17 +279,31 @@ impl StoredToken {
         client_id: &str,
         response: TokenResponse,
         previous_refresh: Option<&str>,
+        previous_scope: Option<&str>,
     ) -> Result<Self> {
         let refresh_token = response
             .refresh_token
             .or_else(|| previous_refresh.map(str::to_string))
             .ok_or_else(|| anyhow!("Spotify returned no refresh token"))?;
+        let scope = if response.scope.trim().is_empty() {
+            previous_scope.unwrap_or_default().to_string()
+        } else {
+            response.scope
+        };
         Ok(Self {
             client_id: client_id.to_string(),
             access_token: response.access_token,
             refresh_token,
             expires_at: now() + response.expires_in.unwrap_or(3600),
-            scope: response.scope,
+            scope,
+        })
+    }
+
+    pub fn grants(&self, required: &[&str]) -> bool {
+        required.iter().all(|required| {
+            self.scope
+                .split_whitespace()
+                .any(|scope| scope == *required)
         })
     }
 

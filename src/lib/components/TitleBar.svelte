@@ -136,7 +136,7 @@
 </div>
 
 <style>
-  .window-controls { display: flex; align-items: center; align-self: stretch; margin-right: -.5rem; margin-top: -1rem; }
+  .window-controls { display: flex; align-items: center; align-self: stretch; margin-right: -1rem; margin-top: -1rem; }
   .window-controls button { display: grid; place-items: center; width: 2.8rem; height: 2.4rem; color: rgba(255,255,255,.55); transition: color .16s ease, background .16s ease; }
   .window-controls button:hover { color: white; background: rgba(255,255,255,.08); }
   .window-controls button.close-window:hover { background: #c84343; }

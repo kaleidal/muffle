@@ -13,7 +13,6 @@
     import PlaylistPage from "./lib/components/PlaylistPage.svelte";
     import SearchPage from "./lib/components/SearchPage.svelte";
     import LyricsPage from "./lib/components/LyricsPage.svelte";
-    import LibraryPage from "./lib/components/LibraryPage.svelte";
     import SettingsPage from "./lib/components/SettingsPage.svelte";
     import EntityPage from "./lib/components/EntityPage.svelte";
 
@@ -169,8 +168,6 @@
                                     <SearchPage
                                         query={$navigationStore.searchQuery}
                                     />
-                                {:else if $navigationStore.page === "library"}
-                                    <LibraryPage />
                                 {:else if $navigationStore.page === "settings"}
                                     <SettingsPage />
                                 {:else if $navigationStore.page === "entity" && $navigationStore.entityType && $navigationStore.entityId}

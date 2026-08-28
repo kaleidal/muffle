@@ -51,6 +51,7 @@ export type SpotifyDevice = {
 export type SpotifyPaging<T> = {
   items: T[]
   next: string | null
+  total?: number
 }
 
 export type SpotifyDevicesResponse = {
@@ -87,6 +88,7 @@ export type SpotifyPlaylistTracksPage = {
     } | null
   }>
   next: string | null
+  total?: number
 }
 
 export type SpotifySavedTracksPage = {
@@ -101,4 +103,5 @@ export type SpotifySavedTracksPage = {
     } | null
   }>
   next: string | null
+  total?: number
 }
